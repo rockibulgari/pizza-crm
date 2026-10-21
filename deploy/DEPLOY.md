@@ -40,8 +40,11 @@ python3 -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); print(c.execute(
 Копируются только файлы из git — без `.venv`, `dev/`, `.env`:
 
 ```
-git archive --format=tar HEAD | ssh root@185.168.208.134 "mkdir -p /root/pizza-crm && tar -x -C /root/pizza-crm"
+git -c core.autocrlf=false archive --format=tar HEAD | ssh root@185.168.208.134 "mkdir -p /root/pizza-crm && tar -x -C /root/pizza-crm"
 ```
+
+`-c core.autocrlf=false` обязателен на Windows: иначе Git отдаст файлы с переводами
+строк Windows (CRLF), и служба systemd на сервере может не запуститься.
 
 При обновлении панели — та же команда, затем `systemctl restart pizza-crm`.
 
