@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Ошибка · Пицца Назрань{% endblock %}
+{% block content %}
+<div class="card">
+  <p class="error">{{ message }}</p>
+  <p><a href="{{ url_for('orders') }}">На главную</a></p>
+</div>
+{% endblock %}

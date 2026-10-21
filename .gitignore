@@ -1,0 +1,13 @@
+# Секреты
+.env
+
+# Базы данных: копия для разработки и служебные файлы SQLite
+dev/
+orders.db
+orders.db-journal
+orders.db-wal
+orders.db-shm
+
+# Python
+.venv/
+__pycache__/

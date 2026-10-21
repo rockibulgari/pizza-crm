@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Вход · Пицца Назрань{% endblock %}
+{% block content %}
+<form method="post" class="card login">
+  <h1>Вход для сотрудников</h1>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Логин
+    <input name="login" value="{{ login or '' }}" autocomplete="username" autocapitalize="none" required autofocus>
+  </label>
+  <label>Пароль
+    <input name="password" type="password" autocomplete="current-password" required>
+  </label>
+  <button type="submit">Войти</button>
+</form>
+{% endblock %}
