@@ -55,6 +55,18 @@ def test_disabled_staff_cannot_login(browser):
     assert response.status_code == 401 and WRONG in error_text(response)
 
 
+def test_head_request_is_not_a_login_attempt(browser):
+    """curl -I и мониторинг шлют HEAD — это не попытка входа и не повод блокировать IP."""
+    for _ in range(6):
+        response = browser.client.head("/login", base_url="https://localhost")
+        assert response.status_code == 200
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM login_attempts").fetchone()[0] == 0
+    conn.close()
+    add_staff("anna", "password1")
+    assert browser.login("anna", "password1").status_code == 302
+
+
 def test_login_without_csrf_is_rejected(browser):
     add_staff("anna", "password1")
     response = browser.post("/login", {"login": "anna", "password": "password1"}, csrf=None)

@@ -200,7 +200,9 @@ def too_large(error):
 def login():
     if g.staff:
         return redirect(url_for("orders"))
-    if request.method == "GET":
+    # Форму разбираем только для POST. HEAD (curl -I, мониторинг) — как GET,
+    # иначе такой запрос засчитывался бы как неудачная попытка входа
+    if request.method != "POST":
         return render_template("login.html")
 
     login_name = request.form.get("login", "").strip().lower()
