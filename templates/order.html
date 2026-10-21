@@ -10,6 +10,40 @@
   <span class="muted order-date">{{ order.created_at.strftime("%d.%m.%Y, %H:%M") }}</span>
 </div>
 
+<section class="card status-card">
+  <h2>Статус</h2>
+  <form method="post" class="status-form" id="status-form"
+        action="{{ url_for('change_status', order_id=order.id, status=params.status,
+                           q=params.q or None, page=params.page if params.page > 1 else None) }}"
+        data-confirm="Отменить заказ №{{ order.id }}?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="status-buttons">
+      {% for key, (value, label) in status_buttons.items() %}
+        <button type="submit" name="status" value="{{ key }}"
+                class="status-button{% if value == order.status %} current st-{{ key }}{% endif %}"
+                {% if value == order.status %}aria-current="true"{% endif %}
+                {% if value == cancelled_status %}data-cancel{% endif %}>{{ label }}</button>
+      {% endfor %}
+    </div>
+  </form>
+
+  <h3>История</h3>
+  {% if history %}
+    <ul class="history">
+      {% for entry in history %}
+        <li>
+          <span class="history-when">{{ entry.changed_at|when }}</span>
+          <span>{{ entry.staff_name }}: {{ entry.old_status }} → {{ entry.new_status }}</span>
+          {% if not entry.notified %}<span class="not-notified">Клиенту не доставлено</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">Из панели статус ещё не меняли.</p>
+  {% endif %}
+  <p class="hint">Смены статуса кнопками в Telegram-боте сюда не попадают.</p>
+</section>
+
 <div class="order-grid">
   <section class="card">
     <h2>Состав</h2>
@@ -61,4 +95,6 @@
     <a class="button-soft" href="tg://user?id={{ order.user_id }}">✈️ Написать в Telegram</a>
   </section>
 </div>
+
+<script src="{{ url_for('static', filename='order.js') }}" defer></script>
 {% endblock %}

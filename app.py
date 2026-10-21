@@ -3,18 +3,20 @@
 Локальный запуск:  flask --app app run
 Первый админ:      flask --app app create-admin
 """
+import logging
 import math
 import sqlite3
 from datetime import datetime, timedelta
 
 import click
-from flask import Flask, g, redirect, render_template, request, session, url_for
+from flask import Flask, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
 import db
 import security
+import telegram
 from security import login_required
 
 SESSION_LIFETIME = timedelta(hours=12)  # одна смена, потом вход заново
@@ -27,6 +29,14 @@ ORDERS_PER_PAGE = 50
 # Статус в базе → ключ для адреса и CSS (ключи как в bot.py) и смайл как в боте
 STATUS_KEYS = dict(zip(db.STATUSES, ("new", "accepted", "cooking", "on_way", "delivered", "cancelled")))
 STATUS_EMOJI = dict(zip(db.STATUSES, ("🆕", "✅", "🍕", "🚗", "✔️", "❌")))
+
+# Кнопки в карточке заказа — как в боте: «✅ Принят» … «❌ Отменён».
+# Статус «новый» вернуть нельзя, в боте такой кнопки тоже нет
+STATUS_BUTTONS = {
+    STATUS_KEYS[status]: (status, f"{STATUS_EMOJI[status]} {status.capitalize()}")
+    for status in db.STATUSES if status != db.STATUS_NEW
+}
+STATUS_CANCELLED = "отменён"
 
 # Вкладки над списком: ключ в адресе (?status=…) → (надпись, статусы; None — все)
 STATUS_TABS = {
@@ -226,7 +236,53 @@ def order(order_id):
     found = db.get_order(order_id)
     if found is None:
         return render_template("error.html", message=f"Заказ №{order_id} не найден"), 404
-    return render_template("order.html", order=found, params=list_params())
+    return render_template(
+        "order.html", order=found, params=list_params(),
+        status_buttons=STATUS_BUTTONS, history=db.status_history(order_id),
+        cancelled_status=STATUS_CANCELLED,
+    )
+
+
+@app.post("/orders/<int:order_id>/status")
+@login_required
+def change_status(order_id):
+    """Кнопка статуса в карточке заказа. Сначала база, потом сообщение клиенту."""
+    # Фильтр списка (?status=…&q=…&page=…) передаём дальше, чтобы «← Заказы» вёл туда же
+    params = list_params()
+    back = redirect(url_for(
+        "order", order_id=order_id, status=params["status"], q=params["q"] or None,
+        page=params["page"] if params["page"] > 1 else None,
+    ))
+    key = request.form.get("status", "")
+    if key not in STATUS_BUTTONS:
+        flash("Неизвестный статус", "error")
+        return back
+    new_status = STATUS_BUTTONS[key][0]
+
+    try:
+        result = db.change_status(order_id, new_status, g.staff["id"])
+    except sqlite3.Error:
+        logging.exception("Не удалось сменить статус заказа №%s", order_id)
+        flash("Не удалось сменить статус, попробуйте ещё раз", "error")
+        return back
+    if result is None:
+        return render_template("error.html", message=f"Заказ №{order_id} не найден"), 404
+    if result["log_id"] is None:
+        flash("Статус уже такой", "info")
+        return back
+
+    # Тот же текст, что присылает бот: «Ваш заказ №7 в пути 🚗»
+    text = f"Ваш заказ №{order_id} {new_status} {STATUS_EMOJI[new_status]}"
+    if telegram.send_message(result["user_id"], text):
+        try:
+            db.mark_notified(result["log_id"])
+        except sqlite3.Error:
+            # Сообщение ушло, статус сохранён — не страшно, если пометка не записалась
+            logging.exception("Не удалось отметить уведомление по заказу №%s", order_id)
+        flash("Статус изменён, клиент уведомлён", "success")
+    else:
+        flash("Статус изменён, но клиенту сообщение не доставлено", "warning")
+    return back
 
 
 # ---------- Команда для сервера ----------

@@ -77,6 +77,19 @@ def init_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS login_attempts_time ON login_attempts (attempted_at)"
         )
+        # История смен статуса из панели. notified — дошло ли сообщение клиенту (1/0)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS status_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id   INTEGER NOT NULL,
+                staff_id   INTEGER NOT NULL REFERENCES staff (id),
+                old_status TEXT    NOT NULL,
+                new_status TEXT    NOT NULL,
+                changed_at TEXT    NOT NULL,
+                notified   INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS status_log_order ON status_log (order_id)")
 
 
 # ---------- Заказы ----------
@@ -168,6 +181,61 @@ def get_order(order_id: int) -> dict | None:
     with closing(connect()) as conn:
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     return row_to_order(row) if row else None
+
+
+# ---------- Смена статуса ----------
+
+def change_status(order_id: int, new_status: str, staff_id: int) -> dict | None:
+    """Меняет статус заказа и записывает это в status_log (notified = 0).
+
+    Возвращает {"user_id", "old_status", "log_id"}; log_id — None, если статус
+    уже такой (тогда в базу ничего не пишется). None — такого заказа нет."""
+    with closing(connect()) as conn, conn:
+        # Сразу берём блокировку на запись: если два сотрудника нажмут одновременно,
+        # второй подождёт и увидит уже новый статус, а не прочитает старый
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT user_id, status FROM orders WHERE id = ?", (order_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        result = {"user_id": row["user_id"], "old_status": row["status"], "log_id": None}
+        if row["status"] == new_status:
+            return result
+        conn.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
+        cursor = conn.execute(
+            """
+            INSERT INTO status_log (order_id, staff_id, old_status, new_status, changed_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (order_id, staff_id, row["status"], new_status, now_moscow().isoformat()),
+        )
+        result["log_id"] = cursor.lastrowid
+        return result
+
+
+def mark_notified(log_id: int):
+    """Telegram подтвердил, что сообщение клиенту ушло."""
+    with closing(connect()) as conn, conn:
+        conn.execute("UPDATE status_log SET notified = 1 WHERE id = ?", (log_id,))
+
+
+def status_history(order_id: int) -> list[dict]:
+    """Смены статуса заказа из панели, новые сверху, с именем сотрудника."""
+    with closing(connect()) as conn:
+        rows = conn.execute(
+            """
+            SELECT status_log.*, staff.name AS staff_name
+            FROM status_log JOIN staff ON staff.id = status_log.staff_id
+            WHERE order_id = ?
+            ORDER BY status_log.id DESC
+            """,
+            (order_id,),
+        ).fetchall()
+    history = [dict(row) for row in rows]
+    for entry in history:
+        entry["changed_at"] = datetime.fromisoformat(entry["changed_at"])
+    return history
 
 
 # ---------- Сотрудники ----------
