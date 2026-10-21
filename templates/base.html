@@ -12,6 +12,15 @@
       <span class="brand-logo">🍕</span>
       <span>Пицца Назрань <span class="brand-sub">CRM</span></span>
     </a>
+    {% if g.staff and g.staff.role == "admin" %}
+      {# Меню нужно только админу: у оператора одна страница — заказы #}
+      <nav class="menu">
+        <a href="{{ url_for('orders') }}"
+           {% if request.endpoint in ('orders', 'order') %}class="current" aria-current="page"{% endif %}>Заказы</a>
+        <a href="{{ url_for('stats_page') }}"
+           {% if request.endpoint == 'stats_page' %}class="current" aria-current="page"{% endif %}>Статистика</a>
+      </nav>
+    {% endif %}
     {% if g.staff %}
       <div class="topbar-right">
         {# Кнопки конкретной страницы, например звук на списке заказов #}

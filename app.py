@@ -6,7 +6,7 @@
 import logging
 import math
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import click
 from flask import Flask, flash, g, redirect, render_template, request, session, url_for
@@ -16,8 +16,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import config
 import db
 import security
+import stats
 import telegram
-from security import login_required
+from security import admin_required, login_required
 
 SESSION_LIFETIME = timedelta(hours=12)  # одна смена, потом вход заново
 MIN_PASSWORD_LENGTH = 8
@@ -37,6 +38,11 @@ STATUS_BUTTONS = {
     for status in db.STATUSES if status != db.STATUS_NEW
 }
 STATUS_CANCELLED = "отменён"
+
+# Готовые периоды статистики: ключ в адресе (?period=…) → (надпись, сколько дней)
+STAT_PERIODS = {"today": ("Сегодня", 1), "7": ("7 дней", 7), "30": ("30 дней", 30)}
+STAT_DEFAULT_PERIOD = "7"
+STAT_MAX_DAYS = 366
 
 # Вкладки над списком: ключ в адресе (?status=…) → (надпись, статусы; None — все)
 STATUS_TABS = {
@@ -92,6 +98,25 @@ def format_when(moment: datetime) -> str:
     if moment.date() == db.now_moscow().date():
         return moment.strftime("%H:%M")
     return moment.strftime("%d.%m %H:%M")
+
+
+WEEKDAYS = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
+
+
+@app.template_filter("day")
+def format_day(day: date, weekday: bool = False) -> str:
+    """Дата для статистики: «21.10» или «21.10, вт»."""
+    text = day.strftime("%d.%m")
+    return f"{text}, {WEEKDAYS[day.weekday()]}" if weekday else text
+
+
+MONTHS = ("янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+
+
+@app.template_filter("month")
+def format_month(day: date) -> str:
+    """Короткий месяц для подписи под графиком: «окт»."""
+    return MONTHS[day.month - 1]
 
 
 @app.template_filter("money")
@@ -283,6 +308,45 @@ def change_status(order_id):
     else:
         flash("Статус изменён, но клиенту сообщение не доставлено", "warning")
     return back
+
+
+def stats_period() -> tuple[str | None, date, date, str | None]:
+    """Период из адреса: ?period=today|7|30 или ?from=ГГГГ-ММ-ДД&to=ГГГГ-ММ-ДД.
+    Возвращает (ключ готового периода или None, с, по, ошибка или None).
+    При ошибке — период по умолчанию и понятное сообщение."""
+    today = db.now_moscow().date()
+    error = None
+    if request.args.get("from") or request.args.get("to"):
+        try:
+            date_from = date.fromisoformat(request.args.get("from", ""))
+            date_to = date.fromisoformat(request.args.get("to", ""))
+        except ValueError:
+            error = "Укажите обе даты периода"
+        else:
+            if date_from > date_to:
+                error = "Дата «с» позже даты «по»"
+            elif (date_to - date_from).days + 1 > STAT_MAX_DAYS:
+                error = "Период не может быть длиннее года"
+            else:
+                return None, date_from, date_to, None
+    key = request.args.get("period", STAT_DEFAULT_PERIOD)
+    if key not in STAT_PERIODS:
+        key = STAT_DEFAULT_PERIOD
+    days = STAT_PERIODS[key][1]
+    return key, today - timedelta(days=days - 1), today, error
+
+
+@app.route("/stats")
+@admin_required
+def stats_page():
+    period, date_from, date_to, error = stats_period()
+    if error:
+        flash(error + ". Показана статистика за 7 дней.", "warning")
+    data = stats.calculate(db.orders_between(date_from, date_to), date_from, date_to, STATUS_CANCELLED)
+    return render_template(
+        "stats.html", stats=data, period=period, periods=STAT_PERIODS,
+        date_from=date_from, date_to=date_to, today=db.now_moscow().date(),
+    )
 
 
 # ---------- Команда для сервера ----------

@@ -7,7 +7,7 @@
 import json
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import config
 
@@ -181,6 +181,21 @@ def get_order(order_id: int) -> dict | None:
     with closing(connect()) as conn:
         row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     return row_to_order(row) if row else None
+
+
+def orders_between(date_from: date, date_to: date) -> list[dict]:
+    """Заказы с date_from по date_to включительно (даты по Москве), старые сверху.
+    Дата заказа — первые 10 символов created_at, как в боте."""
+    with closing(connect()) as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM orders
+            WHERE substr(created_at, 1, 10) BETWEEN ? AND ?
+            ORDER BY id
+            """,
+            (date_from.isoformat(), date_to.isoformat()),
+        ).fetchall()
+    return [row_to_order(row) for row in rows]
 
 
 # ---------- Смена статуса ----------

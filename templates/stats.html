@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Статистика · Пицца Назрань{% endblock %}
+{% block content %}
+<h1>Статистика</h1>
+
+{# ---------- Период ---------- #}
+<div class="period">
+  <nav class="segmented" aria-label="Период">
+    {% for key, (title, days) in periods.items() %}
+      <a href="{{ url_for('stats_page', period=key) }}"
+         {% if key == period %}class="current" aria-current="true"{% endif %}>{{ title }}</a>
+    {% endfor %}
+  </nav>
+  <form method="get" action="{{ url_for('stats_page') }}" class="period-form{% if not period %} current{% endif %}">
+    <label>с <input type="date" name="from" value="{{ date_from.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+    <label>по <input type="date" name="to" value="{{ date_to.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+    <button type="submit">Показать</button>
+  </form>
+</div>
+<p class="muted period-caption">
+  {% if date_from == date_to %}{{ date_from.strftime("%d.%m.%Y") }}
+  {% else %}{{ date_from.strftime("%d.%m.%Y") }} — {{ date_to.strftime("%d.%m.%Y") }}{% endif %}
+  · по московскому времени
+</p>
+
+{# ---------- Итоги ---------- #}
+<div class="tiles">
+  <div class="tile">
+    <span class="tile-label">Заказов</span>
+    <span class="tile-value">{{ stats.count }}</span>
+  </div>
+  <div class="tile">
+    <span class="tile-label">Выручка</span>
+    <span class="tile-value">{{ stats.revenue|money }}</span>
+  </div>
+  <div class="tile">
+    <span class="tile-label">Средний чек</span>
+    <span class="tile-value">{{ stats.average|money if stats.average is not none else "—" }}</span>
+  </div>
+  <div class="tile">
+    <span class="tile-label">Отменено</span>
+    <span class="tile-value">{{ stats.cancelled }}</span>
+  </div>
+</div>
+<p class="hint">Отменённые заказы входят в «Заказов», но не в выручку и не в средний чек.</p>
+
+{# ---------- График выручки ---------- #}
+<section class="card">
+  <h2>Выручка по дням</h2>
+  {% if stats.max_day_revenue %}
+    <div class="chart-scroll">
+      <div class="chart" role="list">
+        {% for row in stats.by_day %}
+          {% set pct = (row.revenue * 100 / stats.max_day_revenue) if row.revenue else 0 %}
+          <div class="bar-col" role="listitem" tabindex="0"
+               aria-label="{{ row.date|day }}: {{ row.revenue|money }}">
+            <div class="bar-track">
+              {# Высота — доля от самого большого дня; маленькая выручка — хотя бы 2%, чтобы было видно #}
+              <div class="bar{% if not row.revenue %} empty{% endif %}"
+                   style="height: {{ [pct, 2]|max if row.revenue else 0 }}%">
+                <span class="bar-tip">{{ row.date|day }} · {{ row.revenue|money }}</span>
+              </div>
+            </div>
+            {# Под столбиком — число; месяц — у первого дня периода и у 1-го числа #}
+            <span class="bar-label">{{ row.date.day }}
+              {%- if loop.first or row.date.day == 1 %}<small>{{ row.date|month }}</small>{% endif %}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+    <p class="hint">Наведите или нажмите на столбик, чтобы увидеть сумму.</p>
+  {% else %}
+    <p class="muted">За этот период выручки нет.</p>
+  {% endif %}
+</section>
+
+{# ---------- По дням ---------- #}
+<section class="card">
+  <h2>По дням</h2>
+  <table class="stat-table days">
+    <thead>
+      <tr><th>Дата</th><th class="num">Заказов</th><th class="num">Выручка</th><th class="num">Средний чек</th><th class="num">Отменено</th></tr>
+    </thead>
+    <tbody>
+      {% for row in stats.by_day|reverse %}
+        <tr{% if not row.count %} class="zero"{% endif %}>
+          <td class="d-date">{{ row.date|day(true) }}</td>
+          <td class="num" data-label="Заказов">{{ row.count }}</td>
+          <td class="num d-revenue" data-label="Выручка">{{ row.revenue|money }}</td>
+          <td class="num" data-label="Средний чек">{{ row.average|money if row.average is not none else "—" }}</td>
+          <td class="num" data-label="Отменено">{{ row.cancelled }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{# ---------- Популярные пиццы ---------- #}
+<section class="card">
+  <h2>Популярные пиццы</h2>
+  {% if stats.pizzas %}
+    <table class="stat-table pizzas">
+      <thead>
+        <tr><th>Пицца</th><th class="num">Штук</th><th class="num">30 см</th><th class="num">40 см</th><th class="num">Выручка</th></tr>
+      </thead>
+      <tbody>
+        {% for pizza in stats.pizzas %}
+          <tr>
+            <td class="p-name">{{ pizza.name }}</td>
+            <td class="num p-qty" data-label="Штук">{{ pizza.qty }}</td>
+            <td class="num" data-label="30 см">{{ pizza[30] }}</td>
+            <td class="num" data-label="40 см">{{ pizza[40] }}</td>
+            <td class="num p-revenue" data-label="Выручка">{{ pizza.revenue|money }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="hint">Выручка по пиццам — без учёта скидки 15% (на пиццы 40 см от 3 штук).
+      Отменённые заказы не учитываются.</p>
+  {% else %}
+    <p class="muted">За этот период пиццы не продавались.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -441,6 +441,155 @@ h3 { font-size: 15px; margin: 22px 0 8px; }
 }
 .hint { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
 
+/* ---------- Меню в шапке (только у админа) ---------- */
+
+.menu { display: flex; gap: 4px; margin: 0 auto 0 28px; }
+.menu a {
+  padding: 8px 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  border-radius: 10px;
+}
+.menu a:hover { color: var(--text); background: var(--bg); }
+.menu a.current { color: var(--brand); background: var(--brand-soft); }
+
+/* ---------- Статистика: период ---------- */
+
+.period { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 8px; }
+.segmented {
+  display: flex;
+  padding: 4px;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.segmented a {
+  padding: 8px 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  border-radius: 9px;
+}
+.segmented a:hover { color: var(--text); }
+.segmented a.current { color: #fff; background: var(--brand); }
+
+.period-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.period-form label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.period-form input {
+  height: 42px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 16px;   /* меньше 16px — iPhone приближает страницу при вводе */
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.period-form.current input { border-color: var(--brand); }
+.period-form button { height: 42px; padding: 0 16px; }
+.period-caption { margin: 0 0 18px; font-size: 14px; }
+
+/* ---------- Статистика: итоги ---------- */
+
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 20px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.tile-label { font-size: 14px; color: var(--muted); }
+.tile-value { font-size: 28px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.tiles + .hint { margin: 10px 0 20px; }
+section.card + section.card, .hint + section.card { margin-top: 20px; }
+
+/* ---------- Статистика: график ---------- */
+
+.chart-scroll {
+  overflow-x: auto;           /* много дней на узком экране — график листается вбок */
+  padding: 30px 0 4px;        /* место для подсказки над самым высоким столбиком */
+}
+.chart { display: flex; gap: 4px; height: 220px; padding: 0 2px; }
+.bar-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 24px;
+  min-width: 24px;
+  outline: none;
+  cursor: default;
+}
+.bar-track {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  flex: 1;
+  border-bottom: 1px solid var(--line);
+}
+.bar {
+  position: relative;
+  width: 100%;
+  background: var(--brand);
+  border-radius: 6px 6px 2px 2px;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+.bar.empty { background: none; }
+.bar-col:hover .bar, .bar-col:focus .bar { opacity: 1; }
+.bar-col:focus-visible .bar-track { box-shadow: 0 0 0 2px var(--brand); border-radius: 6px; }
+
+/* Подсказка с суммой: при наведении мышью или после нажатия (фокус) */
+.bar-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: 1;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #fff;
+  background: var(--text);
+  border-radius: 8px;
+  transform: translateX(-50%);
+  visibility: hidden;
+  pointer-events: none;
+}
+.bar-col:first-child .bar-tip { left: 0; transform: none; }
+.bar-col:last-child .bar-tip { left: auto; right: 0; transform: none; }
+.bar-col:hover .bar-tip, .bar-col:focus .bar-tip { visibility: visible; }
+
+.bar-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 34px;
+  padding-top: 6px;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.bar-label small { font-size: 11px; color: var(--brand); }
+
+/* ---------- Статистика: таблицы ---------- */
+
+.stat-table { width: 100%; border-collapse: collapse; }
+.stat-table th, .stat-table td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--line); }
+.stat-table th:first-child, .stat-table td:first-child { padding-left: 0; }
+.stat-table th:last-child, .stat-table td:last-child { padding-right: 0; }
+.stat-table th { font-size: 13px; font-weight: 600; color: var(--muted); }
+.stat-table th.num, .stat-table td.num { text-align: right; }
+.stat-table tbody tr:last-child td { border-bottom: 0; }
+.stat-table tr.zero td { color: var(--muted); }
+.stat-table .d-revenue, .stat-table .p-revenue, .stat-table .p-qty { font-weight: 700; }
+.stat-table + .hint { margin-top: 12px; }
+
 /* ---------- Телефон (уже 700 px) ---------- */
 
 @media (max-width: 700px) {
@@ -451,6 +600,41 @@ h3 { font-size: 15px; margin: 22px 0 8px; }
   .topbar { padding: 8px 14px; }
   .brand-logo { width: 32px; height: 32px; font-size: 18px; }
   .brand-sub, .who-role { display: none; }
+
+  /* Меню — второй строкой под логотипом, две кнопки на всю ширину */
+  .topbar { flex-wrap: wrap; row-gap: 8px; }
+  .menu { order: 3; flex-basis: 100%; margin: 0; }
+  .menu a { flex: 1; text-align: center; }
+
+  /* Статистика */
+  .period { align-items: stretch; }
+  .segmented { width: 100%; }
+  .segmented a { flex: 1; text-align: center; padding: 10px 6px; }
+  .period-form { width: 100%; }
+  .period-form label { flex: 1 1 130px; }
+  .period-form input { flex: 1; min-width: 0; width: 100%; }
+  .period-form button { flex: 1 1 100%; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .tile { padding: 14px 16px; }
+  .tile-value { font-size: 22px; }
+  .chart { height: 180px; }
+
+  /* Таблицы статистики — карточки: заголовок строки сверху, цифры подписаны */
+  .stat-table thead { display: none; }
+  .stat-table, .stat-table tbody { display: block; }
+  .stat-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));   /* четыре цифры в ряд */
+    gap: 6px 8px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .stat-table tbody tr:last-child { border-bottom: 0; }
+  .stat-table td { padding: 0 !important; border: 0; }
+  /* Подпись мелко над числом */
+  .stat-table td.num { display: flex; flex-direction: column; gap: 1px; text-align: left; }
+  .stat-table td.num::before { content: attr(data-label); font-size: 12px; font-weight: 400; color: var(--muted); }
+  .stat-table .d-date, .stat-table .p-name { grid-column: 1 / -1; font-weight: 700; color: var(--text); }
   .topbar-right { gap: 10px; }
 
   /* Фильтр — панель, выезжающая снизу */
