@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Сотрудники · Пицца Назрань{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Сотрудники</h1>
+</div>
+
+{# ---------- Добавить ---------- #}
+<details class="card add-staff"{% if open_form %} open{% endif %}>
+  <summary><span class="add-plus" aria-hidden="true">+</span> Добавить сотрудника</summary>
+  <form method="post" action="{{ url_for('staff_create') }}" class="staff-form" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Логин
+      <input name="login" value="{{ form.login or '' }}" required maxlength="64"
+             autocapitalize="none" spellcheck="false">
+    </label>
+    <label>Имя (как показывать в панели)
+      <input name="name" value="{{ form.name or '' }}" required maxlength="100">
+    </label>
+    <label>Роль
+      <select name="role">
+        {% for role in roles %}
+          <option value="{{ role }}"{% if form.role == role %} selected{% endif %}>{{ role_names[role] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Пароль (не короче {{ min_password }} символов)
+      <input name="password" type="password" required minlength="{{ min_password }}" maxlength="200"
+             autocomplete="new-password">
+    </label>
+    <button type="submit">Добавить</button>
+  </form>
+</details>
+
+{# ---------- Список ---------- #}
+<div class="staff-list">
+  {% for person in staff_list %}
+    {% set is_me = person.id == g.staff.id %}
+    <section class="card staff-card{% if not person.active %} inactive{% endif %}" id="staff-{{ person.id }}">
+      <div class="staff-head">
+        <div>
+          <h2>{{ person.name }}{% if is_me %} <span class="muted">(это вы)</span>{% endif %}</h2>
+          <p class="muted staff-login">{{ person.login }}</p>
+        </div>
+        <div class="staff-badges">
+          <span class="badge {{ 'role-admin' if person.role == 'admin' else 'role-operator' }}">{{ role_names[person.role] }}</span>
+          {% if not person.active %}<span class="badge st-cancelled">Отключён</span>{% endif %}
+        </div>
+      </div>
+
+      <div class="staff-actions">
+        {# Роль. Себе снять роль админа нельзя — чтобы не остаться без админов #}
+        <form method="post" action="{{ url_for('staff_set_role', staff_id=person.id) }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <select name="role" aria-label="Роль {{ person.name }}"{% if is_me %} disabled{% endif %}>
+            {% for role in roles %}
+              <option value="{{ role }}"{% if person.role == role %} selected{% endif %}>{{ role_names[role] }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="button-quiet"{% if is_me %} disabled title="Нельзя снять с себя роль администратора"{% endif %}>Сменить роль</button>
+        </form>
+
+        {# Новый пароль. После смены старые сессии сотрудника завершаются #}
+        <form method="post" action="{{ url_for('staff_set_password', staff_id=person.id) }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="password" name="password" placeholder="Новый пароль" required
+                 minlength="{{ min_password }}" maxlength="200" autocomplete="new-password"
+                 aria-label="Новый пароль для {{ person.name }}">
+          <button type="submit" class="button-quiet">Сменить пароль</button>
+        </form>
+
+        {# Отключить / включить. Себя отключить нельзя #}
+        {% if not is_me %}
+          <form method="post" action="{{ url_for('staff_set_active', staff_id=person.id) }}" class="inline-form"
+                {% if person.active %}data-confirm="Отключить {{ person.name }}? Войти будет нельзя, открытые сессии завершатся."{% endif %}>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if person.active %}
+              <input type="hidden" name="active" value="0">
+              <button type="submit" class="button-danger">Отключить</button>
+            {% else %}
+              <input type="hidden" name="active" value="1">
+              <button type="submit" class="button-quiet">Включить</button>
+            {% endif %}
+          </form>
+        {% endif %}
+      </div>
+    </section>
+  {% endfor %}
+</div>
+<p class="hint">Сотрудники не удаляются — на них ссылается история статусов. Отключённый не может войти.</p>
+
+<script src="{{ url_for('static', filename='staff.js') }}" defer></script>
+{% endblock %}

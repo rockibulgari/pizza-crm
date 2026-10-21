@@ -5,6 +5,7 @@
 #
 # Установка:  cp deploy/pizza-crm.service /etc/systemd/system/
 #             systemctl daemon-reload && systemctl enable --now pizza-crm
+# Оценка изоляции:  systemd-analyze security pizza-crm
 
 [Unit]
 Description=Pizza Nazran CRM (gunicorn)
@@ -13,10 +14,41 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=/root/pizza-crm
-ExecStart=/root/pizza-crm/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 --access-logfile - app:app
-Environment=PYTHONUNBUFFERED=1
+# Журнала запросов нет: в адресах бывают телефоны и имена из поиска.
+# Ошибки по-прежнему попадают в journalctl -u pizza-crm
+ExecStart=/root/pizza-crm/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 app:app
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 Restart=always
 RestartSec=5
+
+# ---- Изоляция ----
+# Панель работает от root (как бот), поэтому ограничиваем, что ей можно:
+# вся система только для чтения, писать можно лишь в папку бота (orders.db
+# и служебные файлы WAL) и в служебную папку gunicorn.
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/root/pizza-bot -/root/.gunicorn
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+# root без особых прав: файлы бота и так принадлежат root
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+# Сеть: свой порт 8000 и запросы к Telegram
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

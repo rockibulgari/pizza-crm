@@ -9,7 +9,7 @@ import sqlite3
 from datetime import date, datetime, timedelta
 
 import click
-from flask import Flask, flash, g, redirect, render_template, request, session, url_for
+from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -22,6 +22,9 @@ from security import admin_required, login_required
 
 SESSION_LIFETIME = timedelta(hours=12)  # одна смена, потом вход заново
 MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_LENGTH = 200
+MAX_LOGIN_LENGTH = 64
+MAX_NAME_LENGTH = 100
 
 ROLE_NAMES = {db.ROLE_ADMIN: "Администратор", db.ROLE_OPERATOR: "Оператор"}
 
@@ -61,7 +64,28 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,    # недоступна из JavaScript
     SESSION_COOKIE_SAMESITE="Lax",
     PERMANENT_SESSION_LIFETIME=SESSION_LIFETIME,
+    # Больше формам панели не нужно; огромный запрос получит 413 и не займёт воркер
+    MAX_CONTENT_LENGTH=64 * 1024,
 )
+
+# Заголовки безопасности для каждого ответа:
+# - CSP: скрипты только свои файлы (встроенных скриптов в шаблонах нет);
+#   style-src 'unsafe-inline' — ради высоты столбиков графика в style="…";
+# - frame-ancestors / X-Frame-Options: панель нельзя встроить в чужой сайт (кликджекинг);
+# - nosniff: браузер не угадывает тип файла;
+# - Referrer-Policy: адреса с поиском (телефоны) не уходят на чужие сайты.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; form-action 'self'; "
+        "frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
+HSTS = "max-age=31536000"  # год: браузер сам не пойдёт на http://
 # На сервере перед панелью стоит Caddy. ProxyFix берёт из его заголовков
 # настоящий IP сотрудника и то, что запрос пришёл по HTTPS
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
@@ -81,6 +105,19 @@ def before_request():
         session.clear()
         g.staff = None
     security.check_csrf()
+
+
+@app.after_request
+def security_headers(response):
+    for name, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    if request.is_secure:
+        response.headers.setdefault("Strict-Transport-Security", HSTS)
+    # Страницы с заказами и телефонами не оставляем в кэше браузера:
+    # после «Выйти» кнопка «Назад» не покажет данные
+    if response.mimetype == "text/html":
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.context_processor
@@ -152,6 +189,11 @@ def not_found(error):
     return render_template("error.html", message="Страница не найдена"), 404
 
 
+@app.errorhandler(413)
+def too_large(error):
+    return render_template("error.html", message="Слишком большой запрос"), 413
+
+
 # ---------- Страницы ----------
 
 @app.route("/login", methods=["GET", "POST"])
@@ -170,7 +212,10 @@ def login():
         return render_blocked(ip, login_name)
 
     staff = db.get_staff_by_login(login_name)
-    password_ok = check_password_hash(staff["password_hash"] if staff else DUMMY_HASH, password)
+    # Слишком длинный «пароль» не хэшируем — это лишняя нагрузка, таких паролей не бывает
+    password_ok = len(password) <= MAX_PASSWORD_LENGTH and check_password_hash(
+        staff["password_hash"] if staff else DUMMY_HASH, password
+    )
     if not (staff and staff["active"] and password_ok):
         db.add_failed_attempt(ip, login_name)
         # Если это была пятая ошибка — сразу говорим про паузу
@@ -201,6 +246,16 @@ def render_blocked(ip: str, login_name: str):
 
 @app.post("/logout")
 def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.post("/logout-everywhere")
+@login_required
+def logout_everywhere():
+    """Выход на всех устройствах: все cookie этого сотрудника, в том числе
+    скопированные кем-то, перестают действовать."""
+    db.bump_session_version(g.staff["id"])
     session.clear()
     return redirect(url_for("login"))
 
@@ -350,6 +405,121 @@ def stats_page():
     )
 
 
+# ---------- Сотрудники (только админ) ----------
+
+def validation_error(check, value: str, limit: int) -> tuple[str | None, str | None]:
+    """Проверка поля теми же правилами, что в командах для сервера.
+    Возвращает (значение, None) или (None, текст ошибки)."""
+    if len(value) > limit:
+        return None, f"Слишком длинное значение (больше {limit} символов)"
+    try:
+        return check(value), None
+    except click.BadParameter as error:
+        return None, error.message[0].upper() + error.message[1:]
+
+
+def staff_or_404(staff_id: int) -> dict:
+    staff = db.get_staff(staff_id)
+    if staff is None:
+        abort(404)
+    return staff
+
+
+@app.route("/staff")
+@admin_required
+def staff_page():
+    return render_template(
+        "staff.html", staff_list=db.list_staff(), roles=db.ROLES,
+        form={"role": db.ROLE_OPERATOR}, min_password=MIN_PASSWORD_LENGTH,
+    )
+
+
+@app.post("/staff")
+@admin_required
+def staff_create():
+    form = {
+        "login": request.form.get("login", ""),
+        "name": request.form.get("name", ""),
+        "role": request.form.get("role", ""),
+    }
+    login_name, error = validation_error(check_login, form["login"], MAX_LOGIN_LENGTH)
+    if not error:
+        name, error = validation_error(check_name, form["name"], MAX_NAME_LENGTH)
+    if not error:
+        password, error = validation_error(
+            check_password, request.form.get("password", ""), MAX_PASSWORD_LENGTH
+        )
+    if not error and form["role"] not in db.ROLES:
+        error = "Выберите роль"
+    if not error:
+        try:
+            db.create_staff(login_name, name, generate_password_hash(password), form["role"])
+        except sqlite3.IntegrityError:
+            error = f"Логин «{login_name}» уже занят"
+    if error:
+        # Показываем форму снова с тем, что ввели (кроме пароля)
+        flash(error, "error")
+        return render_template(
+            "staff.html", staff_list=db.list_staff(), roles=db.ROLES,
+            form=form, min_password=MIN_PASSWORD_LENGTH, open_form=True,
+        ), 422
+    flash(f"Сотрудник {name} ({login_name}) добавлен — {ROLE_NAMES[form['role']]}", "success")
+    return redirect(url_for("staff_page"))
+
+
+@app.post("/staff/<int:staff_id>/active")
+@admin_required
+def staff_set_active(staff_id):
+    staff = staff_or_404(staff_id)
+    active = request.form.get("active") == "1"
+    if not active and staff_id == g.staff["id"]:
+        flash("Нельзя отключить самого себя", "error")
+    else:
+        db.set_active(staff_id, active)
+        if active:
+            flash(f"{staff['name']} снова может входить в панель", "success")
+        else:
+            flash(f"{staff['name']}: доступ отключён, открытые сессии завершены", "success")
+    return redirect(url_for("staff_page"))
+
+
+@app.post("/staff/<int:staff_id>/password")
+@admin_required
+def staff_set_password(staff_id):
+    staff = staff_or_404(staff_id)
+    password, error = validation_error(
+        check_password, request.form.get("password", ""), MAX_PASSWORD_LENGTH
+    )
+    if error:
+        flash(f"{staff['name']}: {error[0].lower() + error[1:]}", "error")
+        return redirect(url_for("staff_page"))
+    new_version = db.set_password(staff_id, generate_password_hash(password))
+    if staff_id == g.staff["id"]:
+        # Свой пароль: этот вход оставляем, остальные устройства выкидывает
+        session["session_version"] = new_version
+        flash("Ваш пароль изменён. На других устройствах нужно войти заново.", "success")
+    else:
+        flash(f"Пароль для {staff['name']} изменён, его открытые сессии завершены", "success")
+    return redirect(url_for("staff_page"))
+
+
+@app.post("/staff/<int:staff_id>/role")
+@admin_required
+def staff_set_role(staff_id):
+    staff = staff_or_404(staff_id)
+    role = request.form.get("role", "")
+    if role not in db.ROLES:
+        flash("Неизвестная роль", "error")
+    elif staff_id == g.staff["id"] and role != db.ROLE_ADMIN:
+        flash("Нельзя снять с себя роль администратора", "error")
+    elif role == staff["role"]:
+        flash("Роль уже такая", "info")
+    else:
+        db.set_role(staff_id, role)
+        flash(f"{staff['name']}: роль — {ROLE_NAMES[role]}", "success")
+    return redirect(url_for("staff_page"))
+
+
 # ---------- Команда для сервера ----------
 
 def check_login(value: str) -> str:
@@ -408,7 +578,7 @@ def set_password(login_name):
         "Новый пароль", hide_input=True, confirmation_prompt="Новый пароль ещё раз",
         value_proc=check_password,
     )
-    if not db.set_password(login_name, generate_password_hash(password)):
+    if db.set_password(staff["id"], generate_password_hash(password)) is None:
         raise click.ClickException(f"Сотрудника с логином «{login_name}» нет")
     click.echo(f"Пароль для {staff['name']} ({login_name}) изменён. "
                "Все открытые сессии этого сотрудника завершены — нужно войти заново.")

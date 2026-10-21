@@ -1,0 +1,11 @@
+# Резервная копия orders.db. Запускается таймером pizza-crm-backup.timer.
+# Вручную (сделать копию прямо сейчас):  systemctl start pizza-crm-backup
+# Результат:                              journalctl -u pizza-crm-backup -n 20
+
+[Unit]
+Description=Pizza Nazran: nightly backup of orders.db
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 /root/pizza-crm/backup.py --db /root/pizza-bot/orders.db --dir /root/backup --keep-days 14

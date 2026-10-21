@@ -590,6 +590,86 @@ section.card + section.card, .hint + section.card { margin-top: 20px; }
 .stat-table .d-revenue, .stat-table .p-revenue, .stat-table .p-qty { font-weight: 700; }
 .stat-table + .hint { margin-top: 12px; }
 
+/* ---------- Сотрудники ---------- */
+
+.button-quiet { color: var(--text); background: var(--bg); }
+.button-quiet:hover:where(:not(:disabled)) { background: var(--line); }
+.button-danger { color: var(--brand); background: var(--brand-soft); }
+.button-danger:hover { color: #fff; background: var(--brand); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+select, .inline-form input {
+  height: 42px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 16px;   /* меньше 16px — iPhone приближает страницу при вводе */
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+select:focus, .inline-form input:focus, .staff-form input:focus { border-color: var(--brand); outline: none; }
+
+.add-staff { margin-bottom: 20px; padding: 0; }
+.add-staff summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 22px;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+}
+.add-staff summary::-webkit-details-marker { display: none; }
+.add-plus {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: #fff;
+  background: var(--brand);
+  border-radius: 8px;
+}
+.staff-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  padding: 0 22px 22px;
+}
+.staff-form label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
+.staff-form input, .staff-form select {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+.staff-form button { justify-self: start; }
+
+.staff-list { display: grid; gap: 14px; }
+.staff-list .staff-card.card { margin-top: 0; }   /* отступ задаёт gap списка */
+.staff-card.inactive { opacity: 0.75; }
+.staff-card.inactive h2 { color: var(--muted); }
+.staff-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.staff-head h2 { margin: 0; }
+.staff-login { margin: 2px 0 0; font-size: 14px; overflow-wrap: anywhere; }
+.staff-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.role-admin    { color: #fff; background: var(--text); }
+.role-operator { color: var(--text); background: var(--line); }
+
+.staff-actions { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 16px; }
+.inline-form { display: flex; gap: 8px; align-items: center; }
+.inline-form input { width: 170px; }
+.inline-form button { height: 42px; padding: 0 14px; }
+
+/* ---------- Подвал ---------- */
+
+.footer { max-width: 1100px; margin: 0 auto; padding: 0 20px 32px; font-size: 14px; color: var(--muted); }
+
 /* ---------- Телефон (уже 700 px) ---------- */
 
 @media (max-width: 700px) {
@@ -604,7 +684,17 @@ section.card + section.card, .hint + section.card { margin-top: 20px; }
   /* Меню — второй строкой под логотипом, две кнопки на всю ширину */
   .topbar { flex-wrap: wrap; row-gap: 8px; }
   .menu { order: 3; flex-basis: 100%; margin: 0; }
-  .menu a { flex: 1; text-align: center; }
+  .menu a { flex: 1; padding: 8px 4px; text-align: center; }
+
+  /* Сотрудники: формы во всю ширину */
+  .staff-form { grid-template-columns: minmax(0, 1fr); padding: 0 18px 18px; }
+  .staff-form button { justify-self: stretch; }
+  .add-staff summary { padding: 16px 18px; }
+  .staff-actions { flex-direction: column; gap: 10px; }
+  .inline-form { width: 100%; }
+  .inline-form input, .inline-form select { flex: 1; min-width: 0; width: auto; }
+  .inline-form button { flex: none; }
+  .inline-form input[name="active"] + button { flex: 1; }   /* «Отключить»/«Включить» — во всю ширину */
 
   /* Статистика */
   .period { align-items: stretch; }

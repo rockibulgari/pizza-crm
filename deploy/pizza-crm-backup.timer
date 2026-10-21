@@ -1,0 +1,17 @@
+# Каждый день в 04:00 по Москве (часовой пояс указан прямо здесь —
+# время сервера значения не имеет). Persistent: если в 04:00 сервер был
+# выключен, копия сделается сразу после включения.
+#
+# Установка:  cp deploy/pizza-crm-backup.* /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now pizza-crm-backup.timer
+# Когда следующий запуск:  systemctl list-timers pizza-crm-backup.timer
+
+[Unit]
+Description=Pizza Nazran: nightly backup of orders.db at 04:00 Moscow time
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Europe/Moscow
+Persistent=true
+
+[Install]
+WantedBy=timers.target

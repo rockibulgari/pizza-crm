@@ -297,18 +297,59 @@ def get_staff_by_login(login: str) -> dict | None:
     return dict(row) if row else None
 
 
-def set_password(login: str, password_hash: str) -> bool:
+def list_staff() -> list[dict]:
+    """Все сотрудники: сначала активные, внутри — по имени."""
+    with closing(connect()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM staff ORDER BY active DESC, py_lower(name), id"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def set_password(staff_id: int, password_hash: str) -> int | None:
     """Новый пароль сотруднику. Заодно увеличивает session_version — все уже
     открытые сессии этого сотрудника перестают действовать.
-    False — такого логина нет."""
+    Возвращает новую session_version или None, если такого сотрудника нет."""
+    with closing(connect()) as conn, conn:
+        row = conn.execute(
+            """
+            UPDATE staff SET password_hash = ?, session_version = session_version + 1
+            WHERE id = ? RETURNING session_version
+            """,
+            (password_hash, staff_id),
+        ).fetchone()
+    return row["session_version"] if row else None
+
+
+def bump_session_version(staff_id: int):
+    """«Выйти на всех устройствах»: все уже выданные сессии сотрудника перестают действовать."""
+    with closing(connect()) as conn, conn:
+        conn.execute(
+            "UPDATE staff SET session_version = session_version + 1 WHERE id = ?", (staff_id,)
+        )
+
+
+def set_active(staff_id: int, active: bool) -> bool:
+    """Отключает или включает сотрудника. При отключении увеличивает
+    session_version: старые сессии не оживут, даже если сотрудника потом включить.
+    False — такого сотрудника нет."""
     with closing(connect()) as conn, conn:
         cursor = conn.execute(
             """
-            UPDATE staff SET password_hash = ?, session_version = session_version + 1
-            WHERE login = ?
+            UPDATE staff SET active = ?,
+                session_version = session_version + (CASE WHEN ? THEN 0 ELSE 1 END)
+            WHERE id = ?
             """,
-            (password_hash, login),
+            (int(active), int(active), staff_id),
         )
+        return cursor.rowcount == 1
+
+
+def set_role(staff_id: int, role: str) -> bool:
+    """Меняет роль. Права проверяются при каждом запросе, поэтому новая роль
+    действует сразу, без нового входа. False — такого сотрудника нет."""
+    with closing(connect()) as conn, conn:
+        cursor = conn.execute("UPDATE staff SET role = ? WHERE id = ?", (role, staff_id))
         return cursor.rowcount == 1
 
 

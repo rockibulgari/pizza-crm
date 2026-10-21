@@ -19,6 +19,8 @@
            {% if request.endpoint in ('orders', 'order') %}class="current" aria-current="page"{% endif %}>Заказы</a>
         <a href="{{ url_for('stats_page') }}"
            {% if request.endpoint == 'stats_page' %}class="current" aria-current="page"{% endif %}>Статистика</a>
+        <a href="{{ url_for('staff_page') }}"
+           {% if request.endpoint == 'staff_page' %}class="current" aria-current="page"{% endif %}>Сотрудники</a>
       </nav>
     {% endif %}
     {% if g.staff %}
@@ -42,5 +44,14 @@
     {% endfor %}
     {% block content %}{% endblock %}
   </main>
+  {% if g.staff %}
+    <footer class="footer">
+      {# Если вход остался на чужом или потерянном устройстве — выкинет отовсюду #}
+      <form method="post" action="{{ url_for('logout_everywhere') }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="link">Выйти на всех устройствах</button>
+      </form>
+    </footer>
+  {% endif %}
 </body>
 </html>

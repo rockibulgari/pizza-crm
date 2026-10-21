@@ -11,3 +11,6 @@ orders.db-shm
 # Python
 .venv/
 __pycache__/
+
+# Автотесты
+.pytest_cache/
