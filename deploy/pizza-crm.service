@@ -1,0 +1,22 @@
+# Служба systemd для веб-панели: gunicorn слушает только 127.0.0.1:8000,
+# снаружи панель доступна через Caddy по HTTPS.
+# Пользователь — тот же, что у бота (root): SQLite в режиме WAL пишет служебные
+# файлы рядом с orders.db, нужен доступ на запись к папке бота.
+#
+# Установка:  cp deploy/pizza-crm.service /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now pizza-crm
+
+[Unit]
+Description=Pizza Nazran CRM (gunicorn)
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/pizza-crm
+ExecStart=/root/pizza-crm/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 --access-logfile - app:app
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
