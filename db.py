@@ -64,7 +64,9 @@ def init_db():
                 password_hash TEXT    NOT NULL,
                 role          TEXT    NOT NULL CHECK (role IN {ROLES}),
                 active        INTEGER NOT NULL DEFAULT 1,
-                created_at    TEXT    NOT NULL
+                created_at    TEXT    NOT NULL,
+                -- Растёт при смене пароля: сессии со старым номером перестают действовать
+                session_version INTEGER NOT NULL DEFAULT 0
             )
         """)
         conn.execute("""
@@ -90,6 +92,20 @@ def init_db():
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS status_log_order ON status_log (order_id)")
+
+    # Таблица staff из прошлой версии панели — без session_version, дописываем колонку
+    add_column_if_missing("staff", "session_version", "INTEGER NOT NULL DEFAULT 0")
+
+
+def add_column_if_missing(table: str, column: str, definition: str):
+    """Добавляет колонку в таблицу панели, если её ещё нет. Под блокировкой записи:
+    оба воркера gunicorn запускают init_db одновременно, и второй должен увидеть,
+    что первый колонку уже добавил."""
+    with closing(connect()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table})")]
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 # ---------- Заказы ----------
@@ -279,6 +295,31 @@ def get_staff_by_login(login: str) -> dict | None:
     with closing(connect()) as conn:
         row = conn.execute("SELECT * FROM staff WHERE login = ?", (login,)).fetchone()
     return dict(row) if row else None
+
+
+def set_password(login: str, password_hash: str) -> bool:
+    """Новый пароль сотруднику. Заодно увеличивает session_version — все уже
+    открытые сессии этого сотрудника перестают действовать.
+    False — такого логина нет."""
+    with closing(connect()) as conn, conn:
+        cursor = conn.execute(
+            """
+            UPDATE staff SET password_hash = ?, session_version = session_version + 1
+            WHERE login = ?
+            """,
+            (password_hash, login),
+        )
+        return cursor.rowcount == 1
+
+
+def rename_login(old_login: str, new_login: str) -> bool:
+    """Меняет логин. False — старого логина нет.
+    Если новый уже занят — sqlite3.IntegrityError."""
+    with closing(connect()) as conn, conn:
+        cursor = conn.execute(
+            "UPDATE staff SET login = ? WHERE login = ?", (new_login, old_login)
+        )
+        return cursor.rowcount == 1
 
 
 # ---------- Неудачные попытки входа ----------

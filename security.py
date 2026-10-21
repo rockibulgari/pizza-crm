@@ -20,13 +20,19 @@ BLOCK_TIME = timedelta(minutes=5)
 
 def load_current_staff():
     """Перед каждым запросом: кладёт в g.staff вошедшего сотрудника или None.
-    Сотрудник каждый раз читается из базы, поэтому отключённого выкидывает сразу."""
+    Сотрудник каждый раз читается из базы, поэтому отключённого выкидывает сразу,
+    а после смены пароля (session_version выросла) — выкидывает все старые сессии.
+    Сессии, открытые до появления session_version, считаются версией 0."""
     g.staff = None
     staff_id = session.get("staff_id")
     if staff_id is None:
         return
     staff = db.get_staff(staff_id)
-    if staff is None or not staff["active"]:
+    if (
+        staff is None
+        or not staff["active"]
+        or session.get("session_version", 0) != staff["session_version"]
+    ):
         session.clear()
         return
     g.staff = staff

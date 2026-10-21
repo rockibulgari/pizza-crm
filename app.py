@@ -185,6 +185,7 @@ def login():
     session.clear()
     session.permanent = True
     session["staff_id"] = staff["id"]
+    session["session_version"] = staff["session_version"]
     session["logged_in_at"] = db.now_moscow().isoformat()
     return redirect(url_for("orders"))
 
@@ -389,3 +390,41 @@ def create_admin(role):
     except sqlite3.IntegrityError:
         raise click.ClickException(f"Логин «{login_name}» уже занят")
     click.echo(f"Готово: {name} ({login_name}) — {ROLE_NAMES[role]}")
+
+
+def login_argument(ctx, param, value: str) -> str:
+    """Логин из командной строки — по тем же правилам, что при создании."""
+    return check_login(value)
+
+
+@app.cli.command("set-password")
+@click.argument("login_name", metavar="ЛОГИН", callback=login_argument)
+def set_password(login_name):
+    """Сменить пароль сотруднику. Все его открытые сессии завершатся."""
+    staff = db.get_staff_by_login(login_name)
+    if staff is None:
+        raise click.ClickException(f"Сотрудника с логином «{login_name}» нет")
+    password = click.prompt(
+        "Новый пароль", hide_input=True, confirmation_prompt="Новый пароль ещё раз",
+        value_proc=check_password,
+    )
+    if not db.set_password(login_name, generate_password_hash(password)):
+        raise click.ClickException(f"Сотрудника с логином «{login_name}» нет")
+    click.echo(f"Пароль для {staff['name']} ({login_name}) изменён. "
+               "Все открытые сессии этого сотрудника завершены — нужно войти заново.")
+
+
+@app.cli.command("rename-login")
+@click.argument("old_login", metavar="СТАРЫЙ", callback=login_argument)
+@click.argument("new_login", metavar="НОВЫЙ", callback=login_argument)
+def rename_login(old_login, new_login):
+    """Сменить логин сотрудника. Пароль и открытые сессии не меняются."""
+    if old_login == new_login:
+        raise click.ClickException("Новый логин совпадает со старым")
+    try:
+        found = db.rename_login(old_login, new_login)
+    except sqlite3.IntegrityError:
+        raise click.ClickException(f"Логин «{new_login}» уже занят")
+    if not found:
+        raise click.ClickException(f"Сотрудника с логином «{old_login}» нет")
+    click.echo(f"Готово: логин «{old_login}» заменён на «{new_login}»")
