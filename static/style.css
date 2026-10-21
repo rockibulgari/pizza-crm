@@ -624,15 +624,15 @@ section.card + section.card, .hint + section.card { margin-top: 20px; }
   .stat-table, .stat-table tbody { display: block; }
   .stat-table tbody tr {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));   /* четыре цифры в ряд */
-    gap: 6px 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));   /* по две цифры в ряд: подписи не налезают */
+    gap: 10px 16px;
     padding: 12px 0;
     border-bottom: 1px solid var(--line);
   }
   .stat-table tbody tr:last-child { border-bottom: 0; }
   .stat-table td { padding: 0 !important; border: 0; }
   /* Подпись мелко над числом */
-  .stat-table td.num { display: flex; flex-direction: column; gap: 1px; text-align: left; }
+  .stat-table td.num { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }
   .stat-table td.num::before { content: attr(data-label); font-size: 12px; font-weight: 400; color: var(--muted); }
   .stat-table .d-date, .stat-table .p-name { grid-column: 1 / -1; font-weight: 700; color: var(--text); }
   .topbar-right { gap: 10px; }
