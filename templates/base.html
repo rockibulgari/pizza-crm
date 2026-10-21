@@ -8,15 +8,23 @@
 </head>
 <body>
   <header class="topbar">
-    <span class="brand">🍕 Пицца Назрань · CRM</span>
+    <a class="brand" href="{{ url_for('orders') }}">
+      <span class="brand-logo">🍕</span>
+      <span>Пицца Назрань <span class="brand-sub">CRM</span></span>
+    </a>
     {% if g.staff %}
-      <span class="who">
-        {{ g.staff.name }} · {{ role_names[g.staff.role] }}
+      <div class="topbar-right">
+        {# Кнопки конкретной страницы, например звук на списке заказов #}
+        {% block topbar_actions %}{% endblock %}
+        <span class="who">
+          <span class="who-name">{{ g.staff.name }}</span>
+          <span class="who-role">{{ role_names[g.staff.role] }}</span>
+        </span>
         <form method="post" action="{{ url_for('logout') }}" class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="link">Выйти</button>
+          <button type="submit" class="link logout">Выйти</button>
         </form>
-      </span>
+      </div>
     {% endif %}
   </header>
   <main>

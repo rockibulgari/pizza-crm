@@ -1,6 +1,67 @@
 {% extends "base.html" %}
 {% block title %}Заказы · Пицца Назрань{% endblock %}
+
+{% block topbar_actions %}
+  <button type="button" class="icon-button" id="sound-button"
+          title="Звук новых заказов выключен — нажмите, чтобы включить"
+          aria-label="Звук новых заказов" aria-pressed="false">🔕</button>
+{% endblock %}
+
 {% block content %}
+<p class="offline" id="offline" hidden>Нет связи с сервером. Пробуем снова…</p>
+
 <h1>Заказы</h1>
-<p class="muted">Здесь будет список заказов.</p>
+
+<div class="toolbar">
+  <form method="get" action="{{ url_for('orders') }}" class="search" role="search"
+        data-applied="{{ params.q }}">
+    <input type="hidden" name="status" value="{{ params.status }}">
+    <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <input type="search" name="q" id="search-input" value="{{ params.q }}" maxlength="100"
+           placeholder="Найти заказ" title="Номер, имя, телефон или адрес"
+           aria-label="Поиск по номеру, имени, телефону или адресу"
+           enterkeyhint="search" autocomplete="off">
+    <button type="button" class="search-clear" id="search-clear"
+            aria-label="Очистить поиск" title="Очистить"{% if not params.q %} hidden{% endif %}>×</button>
+  </form>
+
+  {# Фильтр по статусу. <details> открывается и без JavaScript;
+     на телефоне это панель снизу, на компьютере — выпадающий список #}
+  <details class="filter" id="filter">
+    <summary class="filter-button" aria-label="Фильтр по статусу">
+      <span>{{ tabs[params.status][0] }}</span>
+      <span class="filter-sep">·</span>
+      <span data-count="{{ params.status }}">{{ tab_counts[params.status] }}</span>
+      <span class="chevron" aria-hidden="true">▾</span>
+    </summary>
+    <div class="filter-backdrop" id="filter-backdrop"></div>
+    <div class="filter-menu">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <p class="sheet-title">Показать заказы</p>
+      {% for key, (title, statuses) in tabs.items() %}
+        <a href="{{ url_for('orders', status=key, q=params.q or None) }}"
+           class="filter-item{% if key == params.status %} current{% endif %}"
+           {% if key == params.status %}aria-current="true"{% endif %}>
+          {% if statuses and statuses|length == 1 %}
+            <span class="dot st-{{ key }}" aria-hidden="true"></span>
+          {% else %}
+            <span class="dot dot-group" aria-hidden="true"></span>
+          {% endif %}
+          <span class="filter-item-title">{{ title }}</span>
+          <span class="filter-count" data-count="{{ key }}">{{ tab_counts[key] }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  </details>
+</div>
+
+<div id="orders-list">
+  {% include "_orders_list.html" %}
+</div>
+
+<script src="{{ url_for('static', filename='orders.js') }}"
+        data-fresh-url="{{ url_for('orders_fresh') }}" defer></script>
 {% endblock %}

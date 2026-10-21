@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Заказ №{{ order.id }} · Пицца Назрань{% endblock %}
+{% block content %}
+<a class="back" href="{{ url_for('orders', status=params.status, q=params.q or None,
+                                 page=params.page if params.page > 1 else None) }}">← Заказы</a>
+
+<div class="order-head">
+  <h1>Заказ №{{ order.id }}</h1>
+  <span class="badge st-{{ status_keys.get(order.status, 'other') }}">{{ order.status|status }}</span>
+  <span class="muted order-date">{{ order.created_at.strftime("%d.%m.%Y, %H:%M") }}</span>
+</div>
+
+<div class="order-grid">
+  <section class="card">
+    <h2>Состав</h2>
+
+    {# Компьютер — таблица #}
+    <table class="items">
+      <thead>
+        <tr><th>Пицца</th><th>Размер</th><th class="num">Кол-во</th><th class="num">Цена</th><th class="num">Сумма</th></tr>
+      </thead>
+      <tbody>
+        {% for item in order["items"] %}
+          <tr>
+            <td>{{ item.name }}</td>
+            <td>{{ item.size }} см</td>
+            <td class="num">{{ item.qty }}</td>
+            <td class="num">{{ item.price|money }}</td>
+            <td class="num">{{ (item.qty * item.price)|money }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {# Телефон — список строк: «Маргарита, 40 см × 5 — 3 450 ₽» #}
+    <ul class="items-list">
+      {% for item in order["items"] %}
+        <li>
+          <span>{{ item.name }}, <span class="nowrap">{{ item.size }} см × {{ item.qty }}</span></span>
+          <span class="num">{{ (item.qty * item.price)|money }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <dl class="totals">
+      <dt>Без скидки</dt><dd>{{ order.subtotal|money }}</dd>
+      <dt>Скидка</dt><dd>{% if order.discount %}−{{ order.discount|money }}{% else %}нет{% endif %}</dd>
+      <dt class="grand">Итого</dt><dd class="grand">{{ order.total|money }}</dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>Клиент</h2>
+    <dl class="details">
+      <dt>Имя</dt><dd>{{ order.client_name }}</dd>
+      <dt>Телефон</dt><dd><a href="tel:{{ order.phone|tel }}">{{ order.phone }}</a></dd>
+      <dt>Адрес</dt><dd>{{ order.address }}</dd>
+      <dt>Комментарий</dt><dd>{{ order.comment or "—" }}</dd>
+      <dt>Оплата</dt><dd>{{ order.payment }}</dd>
+    </dl>
+    <a class="button-soft" href="tg://user?id={{ order.user_id }}">✈️ Написать в Telegram</a>
+  </section>
+</div>
+{% endblock %}

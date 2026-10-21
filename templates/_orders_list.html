@@ -1,0 +1,46 @@
+{# Список и страницы. Эту часть orders.js раз в 15 секунд подменяет свежей,
+   а числа из data-counts переносит в фильтр (сам фильтр не трогается,
+   чтобы открытая панель не закрывалась) #}
+<div class="list-data" data-last-id="{{ last_order_id }}"
+     data-counts='{{ tab_counts|tojson }}' hidden></div>
+
+{% if orders %}
+<table class="orders">
+  <thead>
+    <tr>
+      <th>№</th><th>Время</th><th>Клиент</th><th>Телефон</th>
+      <th class="num">Сумма</th><th>Статус</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for order in orders %}
+      {% set href = url_for('order', order_id=order.id, status=params.status,
+                            q=params.q or None, page=params.page if params.page > 1 else None) %}
+      <tr data-id="{{ order.id }}" data-href="{{ href }}">
+        <td class="o-num"><a href="{{ href }}">№{{ order.id }}</a></td>
+        <td class="o-when">{{ order.created_at|when }}</td>
+        <td class="o-name">{{ order.client_name }}</td>
+        <td class="o-phone">{{ order.phone }}</td>
+        <td class="o-total num">{{ order.total|money }}</td>
+        <td class="o-status">
+          <span class="badge st-{{ status_keys.get(order.status, 'other') }}">{{ order.status|status }}</span>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p class="card muted empty">Заказов не найдено.</p>
+{% endif %}
+
+{% if pages > 1 %}
+<nav class="pager">
+  {% if params.page > 1 %}
+    <a href="{{ url_for('orders', status=params.status, q=params.q or None, page=params.page - 1) }}">◀ Назад</a>
+  {% else %}<span></span>{% endif %}
+  <span class="muted">Страница {{ params.page }} из {{ pages }}</span>
+  {% if params.page < pages %}
+    <a href="{{ url_for('orders', status=params.status, q=params.q or None, page=params.page + 1) }}">Вперёд ▶</a>
+  {% else %}<span></span>{% endif %}
+</nav>
+{% endif %}

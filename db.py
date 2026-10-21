@@ -4,6 +4,7 @@
 не меняет по структуре; свои таблицы (сотрудники, попытки входа) создаёт
 рядом в той же базе.
 """
+import json
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
@@ -18,6 +19,11 @@ ROLE_ADMIN = "admin"
 ROLE_OPERATOR = "operator"
 ROLES = (ROLE_ADMIN, ROLE_OPERATOR)
 
+# Статусы заказа — те же слова, что пишет в базу бот, в том же порядке
+STATUS_NEW = "новый"
+STATUSES = (STATUS_NEW, "принят", "готовится", "в пути", "доставлен", "отменён")
+ACTIVE_STATUSES = STATUSES[:4]  # всё, кроме доставленных и отменённых
+
 
 def now_moscow() -> datetime:
     return datetime.now(MOSCOW).replace(microsecond=0)
@@ -28,6 +34,11 @@ def py_lower(text):
     return text.lower() if isinstance(text, str) else text
 
 
+def digits_only(text):
+    """Только цифры: «+7 (928) 123-45-67» → «79281234567». Для поиска по телефону."""
+    return "".join(ch for ch in text if ch.isdigit()) if isinstance(text, str) else text
+
+
 def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(config.ORDERS_DB)
     # Чтобы строки из базы можно было читать по имени поля: row["name"]
@@ -35,6 +46,7 @@ def connect() -> sqlite3.Connection:
     # Если база занята ботом — подождать до 5 секунд, а не сразу падать с ошибкой
     conn.execute("PRAGMA busy_timeout = 5000")
     conn.create_function("py_lower", 1, py_lower, deterministic=True)
+    conn.create_function("digits_only", 1, digits_only, deterministic=True)
     return conn
 
 
@@ -65,6 +77,97 @@ def init_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS login_attempts_time ON login_attempts (attempted_at)"
         )
+
+
+# ---------- Заказы ----------
+
+PHONE_CHARS = set("0123456789+()- ")
+
+
+def like_pattern(text: str) -> str:
+    r"""«50%» → «%50\%%»: ищем текст где угодно в поле, а % и _ из запроса —
+    обычные символы, а не шаблоны LIKE (их экранирует обратный слеш)."""
+    for ch in ("\\", "%", "_"):
+        text = text.replace(ch, "\\" + ch)
+    return f"%{text}%"
+
+
+def search_condition(q: str) -> tuple[str, list]:
+    """Условие WHERE для поиска по номеру, имени, адресу и телефону.
+    Пустой запрос — подходят все заказы."""
+    q = q.strip()
+    if not q:
+        return "1", []
+    # Имя и адрес — без учёта регистра (свой py_lower, встроенный не знает кириллицу)
+    parts = [
+        r"py_lower(client_name) LIKE ? ESCAPE '\'",
+        r"py_lower(address) LIKE ? ESCAPE '\'",
+    ]
+    params = [like_pattern(q.lower())] * 2
+
+    number = q.lstrip("№#").strip()
+    if number.isdigit():
+        parts.append("id = ?")
+        params.append(int(number))
+
+    # Телефон — только если в запросе нет ничего, кроме цифр и знаков телефона.
+    # Сравниваем одни цифры; первую 8 или 7 отбрасываем, чтобы «8 928 123»
+    # нашёл «+7 (928) 123-45-67»
+    digits = digits_only(q)
+    if digits and set(q) <= PHONE_CHARS:
+        if len(digits) >= 4 and digits[0] in "78":
+            digits = digits[1:]
+        parts.append("digits_only(phone) LIKE ?")
+        params.append(f"%{digits}%")
+
+    return "(" + " OR ".join(parts) + ")", params
+
+
+def row_to_order(row: sqlite3.Row) -> dict:
+    """Строка из базы → словарь заказа: позиции снова список, время — datetime."""
+    order = dict(row)
+    order["items"] = json.loads(order["items"])
+    order["created_at"] = datetime.fromisoformat(order["created_at"])
+    return order
+
+
+def list_orders(statuses: tuple[str, ...] | None, q: str, limit: int, offset: int) -> list[dict]:
+    """Заказы для списка, новые сверху. statuses=None — заказы с любым статусом."""
+    where, params = search_condition(q)
+    if statuses is not None:
+        marks = ", ".join("?" * len(statuses))  # «?, ?» — по одному на статус
+        where += f" AND status IN ({marks})"
+        params += statuses
+    with closing(connect()) as conn:
+        rows = conn.execute(
+            f"SELECT * FROM orders WHERE {where} ORDER BY id DESC LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        ).fetchall()
+    return [row_to_order(row) for row in rows]
+
+
+def count_by_status(q: str) -> dict[str, int]:
+    """Сколько заказов в каждом статусе (с учётом поиска): {"новый": 2, ...}."""
+    where, params = search_condition(q)
+    with closing(connect()) as conn:
+        rows = conn.execute(
+            f"SELECT status, COUNT(*) AS count FROM orders WHERE {where} GROUP BY status",
+            params,
+        ).fetchall()
+    return {row["status"]: row["count"] for row in rows}
+
+
+def last_order_id() -> int:
+    """Номер самого нового заказа (0, если заказов нет). По нему видно, что пришёл новый."""
+    with closing(connect()) as conn:
+        return conn.execute("SELECT COALESCE(MAX(id), 0) FROM orders").fetchone()[0]
+
+
+def get_order(order_id: int) -> dict | None:
+    """Один заказ по номеру или None, если такого нет."""
+    with closing(connect()) as conn:
+        row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    return row_to_order(row) if row else None
 
 
 # ---------- Сотрудники ----------
