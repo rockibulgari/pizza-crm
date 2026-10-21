@@ -5,7 +5,12 @@
   <h1>Сотрудники</h1>
 </div>
 
+{% if demo %}
+  <p class="demo-note">В демо-версии нельзя добавлять и отключать сотрудников, менять им пароль и роль.</p>
+{% endif %}
+
 {# ---------- Добавить ---------- #}
+{% if not demo %}
 <details class="card add-staff"{% if open_form %} open{% endif %}>
   <summary><span class="add-plus" aria-hidden="true">+</span> Добавить сотрудника</summary>
   <form method="post" action="{{ url_for('staff_create') }}" class="staff-form" autocomplete="off">
@@ -31,6 +36,7 @@
     <button type="submit">Добавить</button>
   </form>
 </details>
+{% endif %}
 
 {# ---------- Список ---------- #}
 <div class="staff-list">
@@ -52,12 +58,12 @@
         {# Роль. Себе снять роль админа нельзя — чтобы не остаться без админов #}
         <form method="post" action="{{ url_for('staff_set_role', staff_id=person.id) }}" class="inline-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <select name="role" aria-label="Роль {{ person.name }}"{% if is_me %} disabled{% endif %}>
+          <select name="role" aria-label="Роль {{ person.name }}"{% if is_me or demo %} disabled{% endif %}>
             {% for role in roles %}
               <option value="{{ role }}"{% if person.role == role %} selected{% endif %}>{{ role_names[role] }}</option>
             {% endfor %}
           </select>
-          <button type="submit" class="button-quiet"{% if is_me %} disabled title="Нельзя снять с себя роль администратора"{% endif %}>Сменить роль</button>
+          <button type="submit" class="button-quiet"{% if demo %} disabled{% elif is_me %} disabled title="Нельзя снять с себя роль администратора"{% endif %}>Сменить роль</button>
         </form>
 
         {# Новый пароль. После смены старые сессии сотрудника завершаются #}
@@ -65,8 +71,8 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="password" name="password" placeholder="Новый пароль" required
                  minlength="{{ min_password }}" maxlength="200" autocomplete="new-password"
-                 aria-label="Новый пароль для {{ person.name }}">
-          <button type="submit" class="button-quiet">Сменить пароль</button>
+                 aria-label="Новый пароль для {{ person.name }}"{% if demo %} disabled{% endif %}>
+          <button type="submit" class="button-quiet"{% if demo %} disabled{% endif %}>Сменить пароль</button>
         </form>
 
         {# Отключить / включить. Себя отключить нельзя #}
@@ -76,10 +82,10 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {% if person.active %}
               <input type="hidden" name="active" value="0">
-              <button type="submit" class="button-danger">Отключить</button>
+              <button type="submit" class="button-danger"{% if demo %} disabled{% endif %}>Отключить</button>
             {% else %}
               <input type="hidden" name="active" value="1">
-              <button type="submit" class="button-quiet">Включить</button>
+              <button type="submit" class="button-quiet"{% if demo %} disabled{% endif %}>Включить</button>
             {% endif %}
           </form>
         {% endif %}

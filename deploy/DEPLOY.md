@@ -255,6 +255,95 @@ systemctl start pizza-bot pizza-crm
 Если ключ на компьютере потерян — войти можно только через консоль
 в панели управления хостинга.
 
+## 12. Демо-версия для портфолио (на сервере)
+
+Адрес: `https://demo.185-168-208-134.sslip.io`. Вход: `demo-admin` или
+`demo-operator`, пароль `demo2026` (подсказка есть на странице входа).
+
+Демо — **отдельная копия панели** в `/root/pizza-crm-demo` со своим `.venv`,
+`.env` и базой `demo.db` (выдуманные заказы, телефоны `+7 900 000-00-XX`).
+Служба `pizza-crm-demo` (порт 8001) не видит папки бота, боевой панели и копий,
+не может выйти в интернет. Telegram в демо отключён и в коде (`DEMO=1`).
+Сотрудников в демо нельзя добавлять, отключать, менять им пароль и роль.
+Каждую ночь в 05:00 таймер `pizza-crm-demo-reset` пересоздаёт базу заново.
+
+**Боевая панель, бот и `orders.db` при установке демо не трогаются.** Общий у них
+только Caddy: в `Caddyfile` добавляется второй блок.
+
+### Установка (один раз)
+
+На компьютере — код в папку демо (не в `/root/pizza-crm`!):
+
+```
+git -c core.autocrlf=false archive --format=tar HEAD | ssh root@185.168.208.134 "mkdir -p /root/pizza-crm-demo && tar -x -C /root/pizza-crm-demo"
+```
+
+На сервере — окружение и `.env` демо (свой `SECRET_KEY`, не как у боевой):
+
+```
+cd /root/pizza-crm-demo
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+set -o noclobber
+umask 077
+{
+  echo "SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+  echo "DEMO=1"
+  echo "ORDERS_DB=/root/pizza-crm-demo/demo.db"
+} > .env
+set +o noclobber
+.venv/bin/flask --app app reset-demo       # «Демо-база пересоздана: заказов N, из них отменено M»
+```
+
+Службы и таймер:
+
+```
+cp deploy/pizza-crm-demo.service deploy/pizza-crm-demo-reset.service deploy/pizza-crm-demo-reset.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now pizza-crm-demo pizza-crm-demo-reset.timer
+```
+
+Caddy (старый `Caddyfile` сохраняется рядом; `reload` не прерывает боевую панель):
+
+```
+cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.before-demo
+cp /root/pizza-crm-demo/deploy/Caddyfile /etc/caddy/Caddyfile
+caddy validate --config /etc/caddy/Caddyfile
+systemctl reload caddy
+```
+
+### Проверка
+
+```
+systemctl status pizza-crm-demo --no-pager                # active (running)
+curl -I http://127.0.0.1:8001/login                       # HTTP/1.1 200
+curl -I https://demo.185-168-208-134.sslip.io             # HTTP/2 302 → /login
+systemctl list-timers pizza-crm-demo-reset.timer          # следующий запуск — 05:00
+systemctl start pizza-crm-demo-reset && journalctl -u pizza-crm-demo-reset -n 5 --no-pager
+systemctl status pizza-crm pizza-bot --no-pager           # боевые службы — как были
+```
+
+### Обновление демо
+
+Код — той же командой `git archive … /root/pizza-crm-demo` (на компьютере), затем на сервере:
+
+```
+cd /root/pizza-crm-demo
+.venv/bin/pip install -r requirements.txt     # если менялся requirements.txt
+systemctl restart pizza-crm-demo
+```
+
+### Убрать демо совсем
+
+```
+systemctl disable --now pizza-crm-demo pizza-crm-demo-reset.timer
+rm /etc/systemd/system/pizza-crm-demo*.service /etc/systemd/system/pizza-crm-demo-reset.timer
+systemctl daemon-reload
+```
+
+Затем удалить блок `demo.…` из `/etc/caddy/Caddyfile`, `systemctl reload caddy`
+и папку `/root/pizza-crm-demo`.
+
 ## Если Let's Encrypt не выдал сертификат
 
 Для общего домена sslip.io бывают лимиты. Тогда покупается свой домен

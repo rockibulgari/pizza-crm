@@ -11,3 +11,16 @@
     }
     reverse_proxy 127.0.0.1:8000
 }
+
+# Демо-версия для портфолио: отдельная служба pizza-crm-demo со своей базой.
+# Блок выше (боевая панель) от этого блока не зависит
+demo.185-168-208-134.sslip.io {
+    request_body {
+        max_size 1MB
+    }
+    header {
+        -Server
+        -Via
+    }
+    reverse_proxy 127.0.0.1:8001
+}

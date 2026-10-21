@@ -7,6 +7,9 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+  {% if demo %}
+    <div class="demo-banner" role="note">Демо-версия: данные выдуманные</div>
+  {% endif %}
   <header class="topbar">
     <a class="brand" href="{{ url_for('orders') }}">
       <span class="brand-logo">🍕</span>
@@ -44,7 +47,7 @@
     {% endfor %}
     {% block content %}{% endblock %}
   </main>
-  {% if g.staff %}
+  {% if g.staff and not demo %}
     <footer class="footer">
       {# Если вход остался на чужом или потерянном устройстве — выкинет отовсюду #}
       <form method="post" action="{{ url_for('logout_everywhere') }}" class="inline">

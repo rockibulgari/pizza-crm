@@ -34,7 +34,8 @@
         <li>
           <span class="history-when">{{ entry.changed_at|when }}</span>
           <span>{{ entry.staff_name }}: {{ entry.old_status }} → {{ entry.new_status }}</span>
-          {% if not entry.notified %}<span class="not-notified">Клиенту не доставлено</span>{% endif %}
+          {% if demo %}<span class="not-notified">В демо не отправляется</span>
+          {% elif not entry.notified %}<span class="not-notified">Клиенту не доставлено</span>{% endif %}
         </li>
       {% endfor %}
     </ul>
@@ -92,7 +93,10 @@
       <dt>Комментарий</dt><dd>{{ order.comment or "—" }}</dd>
       <dt>Оплата</dt><dd>{{ order.payment }}</dd>
     </dl>
-    <a class="button-soft" href="tg://user?id={{ order.user_id }}">✈️ Написать в Telegram</a>
+    {# В демо клиенты выдуманные — писать некому #}
+    {% if not demo %}
+      <a class="button-soft" href="tg://user?id={{ order.user_id }}">✈️ Написать в Telegram</a>
+    {% endif %}
   </section>
 </div>
 

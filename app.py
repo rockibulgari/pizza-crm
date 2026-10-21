@@ -6,7 +6,9 @@
 import logging
 import math
 import sqlite3
+import sys
 from datetime import date, datetime, timedelta
+from functools import wraps
 
 import click
 from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
@@ -15,6 +17,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
 import db
+import demo
 import security
 import stats
 import telegram
@@ -90,7 +93,14 @@ HSTS = "max-age=31536000"  # год: браузер сам не пойдёт н�
 # настоящий IP сотрудника и то, что запрос пришёл по HTTPS
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
-db.init_db()
+if config.DEMO:
+    # Создать demo.db, если её нет. На настоящей базе демо не запустится
+    try:
+        demo.prepare()
+    except demo.NotDemoDatabase as error:
+        sys.exit(f"Ошибка: {error} (проверьте ORDERS_DB в .env)")
+else:
+    db.init_db()
 
 
 @app.before_request
@@ -126,7 +136,21 @@ def template_helpers():
         "csrf_token": security.csrf_token,
         "role_names": ROLE_NAMES,
         "status_keys": STATUS_KEYS,
+        "demo": config.DEMO,
+        "demo_staff": demo.DEMO_STAFF,
+        "demo_password": demo.DEMO_PASSWORD,
     }
+
+
+def not_in_demo(view):
+    """Действие, которое в демо запрещено: один посетитель не должен
+    испортить демо остальным (сменить пароль, отключить, выкинуть всех)."""
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if config.DEMO:
+            return render_template("error.html", message="В демо-версии это недоступно"), 403
+        return view(*args, **kwargs)
+    return wrapper
 
 
 @app.template_filter("when")
@@ -254,6 +278,7 @@ def logout():
 
 @app.post("/logout-everywhere")
 @login_required
+@not_in_demo
 def logout_everywhere():
     """Выход на всех устройствах: все cookie этого сотрудника, в том числе
     скопированные кем-то, перестают действовать."""
@@ -354,6 +379,10 @@ def change_status(order_id):
         flash("Статус уже такой", "info")
         return back
 
+    if config.DEMO:
+        flash("Статус изменён. В демо сообщения не отправляются", "info")
+        return back
+
     # Тот же текст, что присылает бот: «Ваш заказ №7 в пути 🚗»
     text = f"Ваш заказ №{order_id} {new_status} {STATUS_EMOJI[new_status]}"
     if telegram.send_message(result["user_id"], text):
@@ -438,6 +467,7 @@ def staff_page():
 
 @app.post("/staff")
 @admin_required
+@not_in_demo
 def staff_create():
     form = {
         "login": request.form.get("login", ""),
@@ -471,6 +501,7 @@ def staff_create():
 
 @app.post("/staff/<int:staff_id>/active")
 @admin_required
+@not_in_demo
 def staff_set_active(staff_id):
     staff = staff_or_404(staff_id)
     active = request.form.get("active") == "1"
@@ -487,6 +518,7 @@ def staff_set_active(staff_id):
 
 @app.post("/staff/<int:staff_id>/password")
 @admin_required
+@not_in_demo
 def staff_set_password(staff_id):
     staff = staff_or_404(staff_id)
     password, error = validation_error(
@@ -507,6 +539,7 @@ def staff_set_password(staff_id):
 
 @app.post("/staff/<int:staff_id>/role")
 @admin_required
+@not_in_demo
 def staff_set_role(staff_id):
     staff = staff_or_404(staff_id)
     role = request.form.get("role", "")
@@ -600,3 +633,16 @@ def rename_login(old_login, new_login):
     if not found:
         raise click.ClickException(f"Сотрудника с логином «{old_login}» нет")
     click.echo(f"Готово: логин «{old_login}» заменён на «{new_login}»")
+
+
+@app.cli.command("reset-demo")
+def reset_demo():
+    """Пересоздать демо-базу с выдуманными заказами (только при DEMO=1)."""
+    if not config.DEMO:
+        raise click.ClickException("Это команда только для демо-версии (DEMO=1 в .env)")
+    try:
+        result = demo.reset()
+    except demo.NotDemoDatabase as error:
+        raise click.ClickException(str(error))
+    click.echo(f"Демо-база пересоздана: заказов {result['orders']}, "
+               f"из них отменено {result['cancelled']}")

@@ -12,5 +12,16 @@
     <input name="password" type="password" autocomplete="current-password" required>
   </label>
   <button type="submit">Войти</button>
+  {% if demo %}
+    <div class="demo-hint">
+      <p>Войдите как:</p>
+      <ul>
+        {% for login, name, role in demo_staff %}
+          <li><b>{{ login }}</b> — {{ role_names[role]|lower }}</li>
+        {% endfor %}
+      </ul>
+      <p>Пароль: <b>{{ demo_password }}</b></p>
+    </div>
+  {% endif %}
 </form>
 {% endblock %}

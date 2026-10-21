@@ -19,6 +19,9 @@ log = logging.getLogger(__name__)
 def send_message(chat_id: int, text: str) -> bool:
     """Отправляет текст клиенту. True — Telegram подтвердил доставку боту клиента,
     False — не получилось (клиент заблокировал бота, нет сети, Telegram не ответил)."""
+    if config.DEMO:
+        # В демо в Telegram не ходим никогда, даже если сюда попали по ошибке
+        return False
     request = urllib.request.Request(
         f"https://api.telegram.org/bot{config.BOT_TOKEN}/sendMessage",
         data=json.dumps({"chat_id": chat_id, "text": text}).encode("utf-8"),

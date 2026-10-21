@@ -7,6 +7,10 @@ orders.db
 orders.db-journal
 orders.db-wal
 orders.db-shm
+demo.db
+demo.db-journal
+demo.db-wal
+demo.db-shm
 
 # Python
 .venv/

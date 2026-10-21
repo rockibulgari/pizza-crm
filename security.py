@@ -7,6 +7,7 @@ from functools import wraps
 
 from flask import abort, g, redirect, request, session, url_for
 
+import config
 import db
 
 # Защита от подбора пароля: после MAX_FAILURES неудач за FAILURE_WINDOW
@@ -82,11 +83,14 @@ def check_csrf():
 # ---------- Подбор пароля ----------
 
 def seconds_blocked(ip: str, login: str) -> int:
-    """Сколько секунд ещё закрыт вход для этого IP или логина (0 — не закрыт)."""
+    """Сколько секунд ещё закрыт вход для этого IP или логина (0 — не закрыт).
+    В демо логины публичные — блокируем только IP, иначе любой посетитель
+    пятью ошибками закрыл бы demo-admin для всех."""
     now = db.now_moscow()
     since = now - FAILURE_WINDOW
     left = timedelta(0)
-    for field, value in (("ip", ip), ("login", login)):
+    checks = [("ip", ip)] if config.DEMO else [("ip", ip), ("login", login)]
+    for field, value in checks:
         count, last = db.recent_failures(field, value, since)
         if count >= MAX_FAILURES:
             left = max(left, last + BLOCK_TIME - now)

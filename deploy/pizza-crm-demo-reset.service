@@ -1,0 +1,41 @@
+# Пересоздание демо-базы заново (выдуманные заказы за последние 14 дней).
+# Запускается таймером pizza-crm-demo-reset.timer. Демо-служба при этом
+# работает дальше: база заполняется одной транзакцией.
+# Вручную:    systemctl start pizza-crm-demo-reset
+# Результат:  journalctl -u pizza-crm-demo-reset -n 20
+
+[Unit]
+Description=Pizza Nazran CRM demo: recreate demo.db
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/pizza-crm-demo
+ExecStart=/root/pizza-crm-demo/.venv/bin/flask --app app reset-demo
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+# ---- Изоляция: как у демо-службы, а сеть не нужна вовсе ----
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/root/pizza-crm-demo
+InaccessiblePaths=-/root/pizza-bot -/root/pizza-crm -/root/backup
+PrivateNetwork=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077

@@ -1,0 +1,54 @@
+# Служба systemd для ДЕМО-версии панели (для портфолио): своя папка, своя база
+# demo.db с выдуманными заказами, порт 127.0.0.1:8001. Снаружи — через Caddy
+# по адресу https://demo.185-168-208-134.sslip.io.
+# К боевой панели, боту и orders.db доступа нет, в интернет выйти нельзя
+# (значит, и до Telegram не достучаться).
+#
+# Установка:  cp deploy/pizza-crm-demo.service /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now pizza-crm-demo
+# Оценка изоляции:  systemd-analyze security pizza-crm-demo
+
+[Unit]
+Description=Pizza Nazran CRM demo (gunicorn)
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/pizza-crm-demo
+# Один воркер: демо смотрят по одному, а память на сервере общая с ботом
+ExecStart=/root/pizza-crm-demo/.venv/bin/gunicorn --workers 1 --bind 127.0.0.1:8001 app:app
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+Restart=always
+RestartSec=5
+
+# ---- Изоляция ----
+# Писать можно только в свою папку (demo.db). Боевые папки для демо не существуют
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/root/pizza-crm-demo -/root/.gunicorn
+InaccessiblePaths=-/root/pizza-bot -/root/pizza-crm -/root/backup
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+# Сеть: только свой порт на 127.0.0.1 (к нему подключается Caddy). Наружу — никуда
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
