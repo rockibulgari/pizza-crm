@@ -44,6 +44,9 @@ def make_backup(db: Path, folder: Path, now: datetime) -> Path:
     copy = sqlite3.connect(partial)
     try:
         source.backup(copy)
+        # Копия наследует режим WAL боевой базы; в обычном режиме это один
+        # самодостаточный файл, и рядом не появляются служебные -wal и -shm
+        copy.execute("PRAGMA journal_mode = DELETE")
     finally:
         copy.close()
         source.close()

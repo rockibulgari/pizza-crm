@@ -19,6 +19,22 @@ def test_backup_creates_checked_copy(tmp_path, capsys):
     assert "целостность ok, заказов: 2" in capsys.readouterr().out
 
 
+def test_backup_of_wal_database_leaves_single_file(tmp_path):
+    """Боевая база в режиме WAL: рядом с копией не должно остаться -wal/-shm/.part."""
+    add_order("2026-10-21T13:00:00+03:00")
+    with sqlite3.connect(DB_FILE) as conn:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    conn.close()
+    assert backup.main(["--db", str(DB_FILE), "--dir", str(tmp_path)]) == 0
+    assert backup.main(["--verify", str(next(tmp_path.glob("orders-auto-*.db")))]) == 0
+
+    files = [p.name for p in tmp_path.iterdir()]
+    assert len(files) == 1 and backup.NAME.match(files[0]), files
+    with sqlite3.connect(tmp_path / files[0]) as conn:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+    conn.close()
+
+
 def test_backup_while_database_is_being_written(tmp_path):
     """Копия во время незавершённой записи: в копию попадает только сохранённое."""
     add_order("2026-10-21T13:00:00+03:00")
