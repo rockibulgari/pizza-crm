@@ -1,16 +1,17 @@
-# Каждую ночь в 05:00 по Москве демо-база пересоздаётся заново — через час
-# после резервной копии боевой базы (04:00), чтобы они не совпадали.
-# Persistent: если в 05:00 сервер был выключен, пересоздание будет сразу после включения.
+# Каждые 2 часа (01:00, 03:00, … 23:00 по Москве) демо-база пересоздаётся заново:
+# самые свежие заказы всегда за последние 2–3 часа, «Сегодня» с утра не пустой.
+# Нечётные часы — чтобы не совпасть с резервной копией боевой базы в 04:00.
+# Persistent: если сервер был выключен, пересоздание будет сразу после включения.
 #
 # Установка:  cp deploy/pizza-crm-demo-reset.* /etc/systemd/system/
 #             systemctl daemon-reload && systemctl enable --now pizza-crm-demo-reset.timer
 # Когда следующий запуск:  systemctl list-timers pizza-crm-demo-reset.timer
 
 [Unit]
-Description=Pizza Nazran CRM demo: recreate demo.db nightly at 05:00 Moscow time
+Description=Pizza Nazran CRM demo: recreate demo.db every 2 hours
 
 [Timer]
-OnCalendar=*-*-* 05:00:00 Europe/Moscow
+OnCalendar=*-*-* 01/2:00:00 Europe/Moscow
 Persistent=true
 
 [Install]

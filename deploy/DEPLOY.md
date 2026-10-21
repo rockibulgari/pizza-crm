@@ -265,7 +265,8 @@ systemctl start pizza-bot pizza-crm
 Служба `pizza-crm-demo` (порт 8001) не видит папки бота, боевой панели и копий,
 не может выйти в интернет. Telegram в демо отключён и в коде (`DEMO=1`).
 Сотрудников в демо нельзя добавлять, отключать, менять им пароль и роль.
-Каждую ночь в 05:00 таймер `pizza-crm-demo-reset` пересоздаёт базу заново.
+Каждые 2 часа (01:00, 03:00, … 23:00 по Москве) таймер `pizza-crm-demo-reset`
+пересоздаёт базу заново: последние заказы всегда за последние 2–3 часа.
 
 **Боевая панель, бот и `orders.db` при установке демо не трогаются.** Общий у них
 только Caddy: в `Caddyfile` добавляется второй блок.
@@ -318,7 +319,7 @@ systemctl reload caddy
 systemctl status pizza-crm-demo --no-pager                # active (running)
 curl -I http://127.0.0.1:8001/login                       # HTTP/1.1 200
 curl -I https://demo.185-168-208-134.sslip.io             # HTTP/2 302 → /login
-systemctl list-timers pizza-crm-demo-reset.timer          # следующий запуск — 05:00
+systemctl list-timers pizza-crm-demo-reset.timer          # следующий запуск — в ближайший нечётный час по Москве
 systemctl start pizza-crm-demo-reset && journalctl -u pizza-crm-demo-reset -n 5 --no-pager
 systemctl status pizza-crm pizza-bot --no-pager           # боевые службы — как были
 ```

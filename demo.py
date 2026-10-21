@@ -3,7 +3,7 @@
 Включается настройкой DEMO=1 в .env. Демо работает со своей базой (demo.db),
 к настоящей orders.db и к Telegram отношения не имеет.
 
-Пересоздать демо-базу (это же каждую ночь делает таймер на сервере):
+Пересоздать демо-базу (это же каждые 2 часа делает таймер на сервере):
     flask --app app reset-demo
 """
 import json
@@ -77,10 +77,12 @@ COMMENTS = (
     "Сдача с 5000", "Побыстрее, пожалуйста", "Оставить у двери",
 )
 
-# Сколько заказов в какой час (работаем с 10 до полуночи): днём обед, вечером пик
+# Сколько заказов в какой час. Доставка круглосуточная, но ночью заказов
+# почти нет; днём — обед, вечером — пик
 HOUR_WEIGHTS = {
-    10: 1, 11: 2, 12: 4, 13: 4, 14: 3, 15: 2, 16: 2,
-    17: 3, 18: 6, 19: 8, 20: 8, 21: 7, 22: 4, 23: 2,
+    0: 2, 1: 1, 2: 0.3, 3: 0.2, 4: 0.2, 5: 0.2, 6: 0.3, 7: 0.5, 8: 1, 9: 1,
+    10: 2, 11: 2, 12: 4, 13: 4, 14: 3, 15: 2, 16: 2,
+    17: 3, 18: 6, 19: 8, 20: 8, 21: 7, 22: 4, 23: 3,
 }
 WEEKEND = (4, 5, 6)  # пт, сб, вс — заказов почти вдвое больше
 WEEKEND_WEIGHT = 1.8
@@ -88,8 +90,20 @@ WEEKEND_WEIGHT = 1.8
 # Путь заказа по статусам: «новый» → … → «доставлен»
 PATH = db.STATUSES[:5]
 CANCELLED = db.STATUSES[5]
-# Статусы самых свежих заказов, начиная с последнего: они ещё в работе
-ACTIVE_NEWEST_FIRST = ("новый", "новый", "принят", "готовится", "в пути", "в пути")
+# Таймер пересоздаёт базу каждые RESET_EVERY. Самые свежие заказы — в последние
+# FRESH перед пересозданием, поэтому в любой момент последний заказ сделан
+# не раньше чем FRESH + RESET_EVERY (3 часа) назад
+RESET_EVERY = timedelta(hours=2)
+FRESH = timedelta(hours=1)
+# Статусы свежих заказов (они ещё в работе), начиная с последнего.
+# Сколько их — зависит от времени суток: вечером больше, ночью два
+ACTIVE_NEWEST_FIRST = {
+    2: ("новый", "в пути"),
+    3: ("новый", "готовится", "в пути"),
+    4: ("новый", "принят", "готовится", "в пути"),
+    5: ("новый", "новый", "принят", "готовится", "в пути"),
+    6: ("новый", "новый", "принят", "готовится", "в пути", "в пути"),
+}
 
 
 def make_clients(rng: random.Random) -> list[dict]:
@@ -129,14 +143,15 @@ def totals(items: list[dict]) -> tuple[int, int, int]:
     return subtotal, subtotal - total, total
 
 
-def last_shift(now: datetime) -> tuple[datetime, datetime]:
-    """Последние часы работы до now — в них заказы, которые ещё в работе.
-    Днём это последние три часа, ночью (таймер в 05:00) — вчерашний вечер."""
-    if now.hour >= 11:
-        opening = now.replace(hour=10, minute=0, second=0, microsecond=0)
-        return max(opening, now - timedelta(hours=3)), now - timedelta(minutes=1)
-    evening = (now - timedelta(days=1)).replace(hour=20, minute=0, second=0, microsecond=0)
-    return evening, evening.replace(hour=23, minute=59, second=59)
+def fresh_moments(rng: random.Random, now: datetime) -> list[datetime]:
+    """Свежие заказы — за последний час (FRESH), примерно через равные промежутки.
+    Сколько — по времени суток: в пик 5–6, днём 3–4, ночью 2."""
+    weight = HOUR_WEIGHTS[(now - FRESH / 2).hour]
+    count = rng.randint(5, 6) if weight >= 4 else rng.randint(3, 4) if weight >= 2 else 2
+    start, end = now - FRESH, now - timedelta(minutes=1)
+    step = (end - start) / count
+    return [start + step * n + timedelta(seconds=rng.uniform(0, step.total_seconds()))
+            for n in range(count)]
 
 
 def moment_in(rng: random.Random, day, hours: list[int], before: datetime) -> datetime:
@@ -192,15 +207,12 @@ def generate(now: datetime, rng: random.Random) -> list[dict]:
     """Выдуманные заказы за последние DAYS дней, старые сверху."""
     clients = make_clients(rng)
     count = rng.randint(MIN_ORDERS, MAX_ORDERS)
-    # Свежие заказы — последних часов работы, они ещё в работе.
-    # Из остальных несколько отменены, прочие доставлены
-    active = rng.randint(5, len(ACTIVE_NEWEST_FIRST))
-    shift_start, shift_end = last_shift(now)
-    shift_seconds = int((shift_end - shift_start).total_seconds())
-    fresh = [shift_start + timedelta(seconds=rng.randint(0, shift_seconds)) for _ in range(active)]
-    moments = sorted(past_moments(rng, now, count - active, shift_start)) + sorted(fresh)
+    # Свежие заказы ещё в работе. Из остальных несколько отменены, прочие доставлены
+    fresh = fresh_moments(rng, now)
+    active = len(fresh)
+    moments = sorted(past_moments(rng, now, count - active, fresh[0])) + fresh
 
-    statuses = ["доставлен"] * (len(moments) - active) + list(ACTIVE_NEWEST_FIRST[:active])[::-1]
+    statuses = ["доставлен"] * (len(moments) - active) + list(ACTIVE_NEWEST_FIRST[active])[::-1]
     for index in rng.sample(range(len(moments) - active), rng.randint(3, 5)):
         statuses[index] = CANCELLED
 
@@ -248,8 +260,8 @@ def reset(only_if_empty: bool = False, now: datetime | None = None) -> dict | No
     only_if_empty — только если сотрудников ещё нет (первый запуск).
     Возвращает {"orders", "cancelled"} или None, если ничего не делали."""
     now = now or db.now_moscow()
-    # Один и тот же день — одни и те же данные
-    rng = random.Random(now.date().toordinal())
+    # В один и тот же час — одни и те же данные
+    rng = random.Random(now.strftime("%Y%m%d%H"))
     orders = generate(now, rng)
     staff_hash = generate_password_hash(DEMO_PASSWORD)
 

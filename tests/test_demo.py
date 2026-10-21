@@ -2,6 +2,7 @@
 import random
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -36,19 +37,32 @@ def demo_admin(demo_mode):
 
 # ---------- Генератор ----------
 
-# Ночью (как таймер), днём и вечером; будни и выходные
-MOMENTS = [datetime(2026, 10, d, h, 0, tzinfo=db.MOSCOW) for d in (19, 24) for h in (5, 15, 21)]
+TIMER = Path(__file__).resolve().parent.parent / "deploy" / "pizza-crm-demo-reset.timer"
 
 
-@pytest.mark.parametrize("now", MOMENTS)
+def reset_hours() -> list[int]:
+    """Часы пересоздания по Москве из таймера: «*-*-* 01/2:00:00 Europe/Moscow» → 1, 3, … 23."""
+    rule = re.search(r"^OnCalendar=\*-\*-\* (\d+)/(\d+):00:00 Europe/Moscow$",
+                     TIMER.read_text(encoding="utf-8"), re.M)
+    assert rule, "в таймере нет OnCalendar вида «*-*-* ЧЧ/2:00:00 Europe/Moscow»"
+    first, step = int(rule[1]), int(rule[2])
+    assert timedelta(hours=step) == demo.RESET_EVERY
+    return list(range(first, 24, step))
+
+
+# Будний день и выходной; каждый час, когда срабатывает таймер, и между ними
+DAYS = (datetime(2026, 10, 21, tzinfo=db.MOSCOW), datetime(2026, 10, 24, tzinfo=db.MOSCOW))
+MOMENTS = [day + timedelta(hours=h, minutes=m) for day in DAYS for h in range(24) for m in (0, 37)]
+
+
+@pytest.mark.parametrize("now", MOMENTS, ids=lambda m: m.strftime("%a-%H%M"))
 def test_generated_orders_look_real(now):
-    for seed in range(20):
+    for seed in range(5):
         orders = demo.generate(now, random.Random(seed))
         assert demo.MIN_ORDERS <= len(orders) <= demo.MAX_ORDERS
         first_day = now.date() - timedelta(days=demo.DAYS - 1)
         for order in orders:
             assert first_day <= order["created_at"].date() and order["created_at"] < now
-            assert 10 <= order["created_at"].hour <= 23
             assert PHONE.match(order["phone"]), order["phone"]
             assert ADDRESS.match(order["address"]), order["address"]
             assert order["client_name"] in demo.NAMES
@@ -60,29 +74,60 @@ def test_generated_orders_look_real(now):
                 assert order["created_at"] <= entry["at"] <= now
             if order["history"]:
                 assert order["history"][-1]["new"] == order["status"]
+        assert orders == sorted(orders, key=lambda o: o["created_at"])
         statuses = [o["status"] for o in orders]
         assert 3 <= statuses.count("отменён") <= 5
-        assert statuses[-1] == "новый"  # самый свежий заказ ещё не приняли
-        assert {"новый", "принят", "готовится", "в пути", "доставлен"} <= set(statuses)
-        # Заказы в работе — только из последних часов работы, а не недельной давности
-        shift_start, _ = demo.last_shift(now)
-        for order in orders:
-            if order["status"] in db.ACTIVE_STATUSES:
-                assert order["created_at"] >= shift_start
-        # Нет пустых дней (кроме сегодняшнего, если смена ещё не началась)
+        assert {"новый", "в пути", "доставлен"} <= set(statuses)
+        # Заказы в работе — только последние, за последний час, а не недельной давности
+        active = [o for o in orders if o["status"] in db.ACTIVE_STATUSES]
+        assert active == orders[-len(active):]
+        assert [o["status"] for o in active][::-1] == list(demo.ACTIVE_NEWEST_FIRST[len(active)])
+        assert all(now - demo.FRESH <= o["created_at"] for o in active)
+        # Нет пустых дней (кроме сегодняшнего — он может только начаться)
         days = {o["created_at"].date() for o in orders}
         assert len(days | {now.date()}) == demo.DAYS
 
 
-def test_more_orders_in_evening_and_on_weekends():
-    now = datetime(2026, 10, 21, 5, 0, tzinfo=db.MOSCOW)
-    moments = [o["created_at"] for seed in range(30)
-               for o in demo.generate(now, random.Random(seed))]
+@pytest.mark.parametrize("day", DAYS, ids=lambda d: d.strftime("%a"))
+def test_between_resets_orders_stay_fresh_and_today_not_empty(day):
+    """Как на сервере: таймер пересоздаёт базу, посетитель смотрит в любую минуту
+    до следующего пересоздания."""
+    for hour in reset_hours():
+        reset_at = day + timedelta(hours=hour)
+        for seed in range(5):
+            orders = demo.generate(reset_at, random.Random(seed))
+            newest = orders[-1]["created_at"]
+            # Свежие заказы — тем больше, чем оживлённее час
+            fresh = [o for o in orders if o["status"] in db.ACTIVE_STATUSES]
+            if demo.HOUR_WEIGHTS[hour - 1] >= 4:
+                assert len(fresh) >= 5
+            for minutes in range(0, int(demo.RESET_EVERY.total_seconds() // 60), 10):
+                viewed = reset_at + timedelta(minutes=minutes)
+                assert viewed - newest <= timedelta(hours=3), (reset_at, viewed, newest)
+                if viewed.hour >= 10:
+                    assert any(o["created_at"].date() == viewed.date() for o in orders), viewed
+
+
+def test_realistic_time_of_day():
+    """По всем пересозданиям за сутки: вечером больше всего заказов, ночью — единицы."""
+    moments = [o["created_at"] for day in DAYS for hour in reset_hours() for seed in range(3)
+               for o in demo.generate(day + timedelta(hours=hour), random.Random(seed))]
     evening = sum(18 <= m.hour <= 22 for m in moments)
-    assert evening > len(moments) / 2
+    night = sum(2 <= m.hour <= 8 for m in moments)
+    assert evening > len(moments) * 0.4
+    assert night < len(moments) * 0.1
+    assert evening > night * 5
+
+
+def test_more_orders_on_weekends():
+    now = datetime(2026, 10, 21, 13, 0, tzinfo=db.MOSCOW)
+    moments = [o["created_at"] for seed in range(30)
+               for o in demo.generate(now, random.Random(seed))
+               if o["created_at"].date() < now.date()]  # сегодняшний день неполный
     weekend_days = sum(d.weekday() in demo.WEEKEND for d in {m.date() for m in moments})
+    weekdays = len({m.date() for m in moments}) - weekend_days
     per_weekend_day = sum(m.weekday() in demo.WEEKEND for m in moments) / weekend_days
-    per_weekday = sum(m.weekday() not in demo.WEEKEND for m in moments) / (demo.DAYS - weekend_days)
+    per_weekday = sum(m.weekday() not in demo.WEEKEND for m in moments) / weekdays
     assert per_weekend_day > per_weekday * 1.4
 
 
